@@ -12,10 +12,11 @@ using namespace std;
 
 struct Voxel{
     Mesh quadric;
+    allquadrics::TriangleMesh mesh;
     vec3 bmin, bmax;
 };
 
-vector<Voxel> voxels;
+vector<vector<vector<Voxel>>> voxels;
 
 inline bool inBox(vec3 point, vec3 bmin, vec3 bmax) {
     return min(point, bmin) == bmin && max(point, bmax) == bmax;
@@ -179,6 +180,41 @@ void buildMesh(allquadrics::Quadric qfit, allquadrics::TriangleMesh& mesh, vec3 
     }
 }
 
+vector<vec3> clipTriangle(const vector<vec3>& triangle, vec3 bmin, vec3 bmax) {
+    vector<vec3> res(triangle), p;
+    for (int k = 0; k < 3; ++k) {
+        p = res;
+        res.clear();
+        for (int i = 0; i < p.size(); ++i) {
+            vec3 e = p[(i + 1) % p.size()] - p[i];
+            if (e[k] != 0) {
+                float t = (bmin[k] - p[i][k]) / e[k];
+                if (0 < t && t < 1) {
+                    res.emplace_back(p[i] + t * e);
+                }
+            }
+            if (p[(i + 1) % p.size()][k] >= bmin[k]) {
+                res.emplace_back(p[(i + 1) % p.size()]);
+            }
+        }
+        p = res;
+        res.clear();
+        for (int i = 0; i < p.size(); ++i) {
+            vec3 e = p[(i + 1) % p.size()] - p[i];
+            if (e[k] != 0) {
+                float t = (bmax[k] - p[i][k]) / e[k];
+                if (0 < t && t < 1) {
+                    res.emplace_back(p[i] + t * e);
+                }
+            }
+            if (p[(i + 1) % p.size()][k] <= bmax[k]) {
+                res.emplace_back(p[(i + 1) % p.size()]);
+            }
+        }
+    }
+    return res;
+}
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
@@ -278,6 +314,7 @@ int main(int argc, char **argv) {
     if (argc > 2) xslice = atoi(argv[2]);
     if (argc > 3) yslice = atoi(argv[3]);
     if (argc > 4) zslice = atoi(argv[4]);
+    voxels = vector<vector<vector<Voxel>>>(xslice, vector<vector<Voxel>>(yslice, vector<Voxel>(zslice)));
     	
     // Always recenter and scale your data before fitting!
     //inputMesh.centerAndScale(1);
@@ -293,39 +330,98 @@ int main(int argc, char **argv) {
     }
     vec3 cap = bbmax - bbmin;
     cap[0] /= (float)xslice; cap[1] /= (float)yslice; cap[2] /= (float)zslice;
+    //for (int i = 0; i < xslice; ++i) {
+    //    for (int j = 0; j < yslice; ++j) {
+    //        for (int k = 0; k < zslice; ++k) {
+    //            Voxel voxel;
+    //            voxel.bmin = bbmin + vec3(i, j, k) * cap;
+    //            voxel.bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
+    //            bool flag = false;
+    //            for (int t = 0; t < inputMesh.triangles.size(); ++t) {
+    //                // Use bounding box to find intersected triangles.
+    //                vec3 v0 = inputMesh.vertices[inputMesh.triangles[t].ind[0]];
+    //                vec3 v1 = inputMesh.vertices[inputMesh.triangles[t].ind[1]];
+    //                vec3 v2 = inputMesh.vertices[inputMesh.triangles[t].ind[2]];
+    //                vec3 vmin = min(v0, min(v1, v2)), vmax = max(v0, max(v1, v2));
+    //                if (!(voxel.bmin[0] > vmax[0] || voxel.bmax[0] < vmin[0]
+    //                    || voxel.bmin[1] > vmax[1] || voxel.bmax[1] < vmin[1]
+    //                    || voxel.bmin[2] > vmax[2] || voxel.bmax[2] < vmin[2])) {
+    //                    inputMesh.triangleTags[t] = 1;
+    //                    flag = true;
+    //                }
+    //            }
+    //            if (flag) {
+    //                allquadrics::Quadric qfit;
+    //                allquadrics::fitEllipsoid(inputMesh, qfit);
+    //                allquadrics::TriangleMesh triMesh;
+    //                buildMesh(qfit, triMesh, voxel.bmin, voxel.bmax, 50);
+    //                if (!triMesh.triangles.empty()) {
+    //                    voxel.quadric = cvtMesh(triMesh);
+    //                }
+    //                voxels.push_back(voxel);
+    //                for (int t = 0; t < inputMesh.triangleTags.size(); ++t) {
+    //                    inputMesh.triangleTags[t] = 0;
+    //                }
+    //                out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
+    //                for (int q = 0; q < 10; ++q) {
+    //                    out << ' ' << qfit.q[q];
+    //                }
+    //                out << endl;
+    //            }
+    //        }
+    //    }
+    //}
     for (int i = 0; i < xslice; ++i) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
-                Voxel voxel;
-                voxel.bmin = bbmin + vec3(i, j, k) * cap;
-                voxel.bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
-                bool flag = false;
-                for (int t = 0; t < inputMesh.triangles.size(); ++t) {
-                    // Use bounding box to find intersected triangles.
-                    vec3 v0 = inputMesh.vertices[inputMesh.triangles[t].ind[0]];
-                    vec3 v1 = inputMesh.vertices[inputMesh.triangles[t].ind[1]];
-                    vec3 v2 = inputMesh.vertices[inputMesh.triangles[t].ind[2]];
-                    vec3 vmin = min(v0, min(v1, v2)), vmax = max(v0, max(v1, v2));
-                    if (!(voxel.bmin[0] > vmax[0] || voxel.bmax[0] < vmin[0]
-                        || voxel.bmin[1] > vmax[1] || voxel.bmax[1] < vmin[1]
-                        || voxel.bmin[2] > vmax[2] || voxel.bmax[2] < vmin[2])) {
-                        inputMesh.triangleTags[t] = 1;
-                        flag = true;
+                voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
+                voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
+                voxels[i][j][k].mesh.clear();
+            }
+        }
+    }
+    for (const auto& triangle : inputMesh.triangles) {
+        vec3 v0 = inputMesh.vertices[triangle.ind[0]];
+        vec3 v1 = inputMesh.vertices[triangle.ind[1]];
+        vec3 v2 = inputMesh.vertices[triangle.ind[2]];
+        vector<vec3> tri = { v0, v1, v2 };
+        vec3 tmin = min(v0, min(v1, v2)), tmax = max(v0, max(v1, v2));
+        int xstart = std::max(int((tmin.x - bbmin.x) / cap.x), 0);
+        int ystart = std::max(int((tmin.y - bbmin.y) / cap.y), 0);
+        int zstart = std::max(int((tmin.z - bbmin.z) / cap.z), 0);
+        int xend = std::min(int((tmax.x - bbmin.x) / cap.x), xslice - 1);
+        int yend = std::min(int((tmax.y - bbmin.y) / cap.y), yslice - 1);
+        int zend = std::min(int((tmax.z - bbmin.z) / cap.z), zslice - 1);
+        for (int i = xstart; i <= xend; ++i) {
+            for (int j = ystart; j <= yend; ++j) {
+                for (int k = zstart; k <= zend; ++k) {
+                    vector<vec3> points = clipTriangle(tri, voxels[i][j][k].bmin, voxels[i][j][k].bmax);
+                    if (points.size() >= 3) {
+                        int vs = voxels[i][j][k].mesh.vertices.size();
+                        for (int p = 0; p < points.size(); ++p) {
+                            voxels[i][j][k].mesh.vertices.emplace_back(points[p]);
+                        }
+                        for (int p = 1; p <= points.size() - 2; ++p) {
+                            voxels[i][j][k].mesh.triangles.emplace_back(allquadrics::Tri(vs + 0, vs + p, vs + p + 1));
+                        }
                     }
                 }
-                if (flag) {
+            }
+        }
+    }
+    for (int i = 0; i < xslice; ++i) {
+        for (int j = 0; j < yslice; ++j) {
+            for (int k = 0; k < zslice; ++k) {
+                if (!voxels[i][j][k].mesh.triangles.empty()) {
+                    voxels[i][j][k].mesh.computeNormals();
                     allquadrics::Quadric qfit;
-                    allquadrics::fitEllipsoid(inputMesh, qfit);
+                    allquadrics::fitEllipsoid(voxels[i][j][k].mesh, qfit);
                     allquadrics::TriangleMesh triMesh;
-                    buildMesh(qfit, triMesh, voxel.bmin, voxel.bmax, 50);
+                    buildMesh(qfit, triMesh, voxels[i][j][k].bmin, voxels[i][j][k].bmax, 50);
                     if (!triMesh.triangles.empty()) {
-                        voxel.quadric = cvtMesh(triMesh);
+                        voxels[i][j][k].quadric = cvtMesh(triMesh);
                     }
-                    voxels.push_back(voxel);
-                    for (int t = 0; t < inputMesh.triangleTags.size(); ++t) {
-                        inputMesh.triangleTags[t] = 0;
-                    }
-                    out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
+                    out << voxels[i][j][k].bmin[0] << ' ' << voxels[i][j][k].bmin[1] << ' ' << voxels[i][j][k].bmin[2] << ' ' << voxels[i][j][k].bmax[0] << ' ' << voxels[i][j][k].bmax[1] << ' ' << voxels[i][j][k].bmax[2];
                     for (int q = 0; q < 10; ++q) {
                         out << ' ' << qfit.q[q];
                     }
@@ -371,9 +467,18 @@ int main(int argc, char **argv) {
 
         ourShader.setVec3("cameraPos", camera.Position);
         //ourModel.Draw(ourShader);
-        for (int i = 0; i < voxels.size(); ++i) {
-            if (!voxels[i].quadric.indices.empty())
-                voxels[i].quadric.Draw(ourShader);
+        //for (int i = 0; i < voxels.size(); ++i) {
+        //    if (!voxels[i].quadric.indices.empty())
+        //        voxels[i].quadric.Draw(ourShader);
+        //}
+        for (int i = 0; i < xslice; ++i) {
+            for (int j = 0; j < yslice; ++j) {
+                for (int k = 0; k < zslice; ++k) {
+                    if (!voxels[i][j][k].quadric.indices.empty()) {
+                        voxels[i][j][k].quadric.Draw(ourShader);
+                    }
+                }
+            }
         }
 
 
