@@ -16,5 +16,5 @@ You will get `param.txt` after running the program.
 
 Each line of `param.txt` consists of the left bottom corner point and the right top corner point of a voxel, the parameters of the ellipsoid function.
 
-Then use `display.py` to show ellipsoids.
+You can use `display.py` to show ellipsoids or view them in the program.
 

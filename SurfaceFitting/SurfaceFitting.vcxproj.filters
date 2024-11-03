@@ -15,9 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\glutils.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="src\main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -25,6 +22,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\roots3and4.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\glad.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -38,8 +38,22 @@
     <ClInclude Include="src\roots3and4.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\view.h">
+    <ClInclude Include="src\camera.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\shader_m.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mesh.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shader\simple.fs">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shader\simple.vs">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
 </Project>

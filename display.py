@@ -4,10 +4,11 @@ import trimesh
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
+cnt = 0
 with open('SurfaceFitting/param.txt') as f:
     for line in f.readlines():
         term = line.split(' ')
-        _, x0, y0, z0, _, x1, y1, z1, _, J, G, H, I, A, D, E, B, F, C = term
+        x0, y0, z0, x1, y1, z1, J, G, H, I, A, D, E, B, F, C = term
         x0 = float(x0)
         y0 = float(y0)
         z0 = float(z0)
@@ -28,6 +29,8 @@ with open('SurfaceFitting/param.txt') as f:
         y = np.linspace(y0, y1, 10)
         x, y = np.meshgrid(x, y)
         p = []
+        if A*B < 0 or A*C < 0 or B*C < 0:
+            print('fuck')
         for i in np.arange(x.shape[0]):
             for j in np.arange(x.shape[1]):
                 a = C
@@ -43,16 +46,22 @@ with open('SurfaceFitting/param.txt') as f:
                         if z0 <= z <= z1:
                             p.append([x[i, j], y[i, j], z])
                 elif b != 0:
+                    #print('fuck')
                     z = -c / b
                     if z0 <= z < z1:
                         p.append([x[i, j], y[i, j], z])
+                else:
+                    ...
+                    #print('fuck')
         p = np.asarray(p)
         if len(p) > 0:
             ax.scatter(p[:, 0], p[:, 1], p[:, 2])
+        cnt += 1
 
 mesh = trimesh.load('example_data/bunny_zip.obj')
 vertices = mesh.vertices
 faces = mesh.faces
 #ax.plot_trisurf(vertices[:, 0], vertices[:, 1], faces, vertices[:, 2], alpha=0.5)
+ax.view_init(elev=-149, azim=-121)
 
 plt.show()

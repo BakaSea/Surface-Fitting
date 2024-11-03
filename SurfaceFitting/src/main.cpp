@@ -1,110 +1,276 @@
-// demonstrates usage of the quadric fitting library
-// pass a mesh to fit on the command line (./aqd_demo meshname)
-// and this will fit all quadric types, then render the results
-// press tab or left/right arrows to cycle through fitting results
-
-#include "view.h"
-
-#include "quadricfitting.h"
-
 #include <fstream>
 #include <map>
+#include <glm/glm.hpp>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
-FILE _iob[] = { *stdin, *stdout, *stderr };
-extern "C" FILE * __cdecl __iob_func(void) { return _iob; }
-
+#include "camera.h"
+#include "shader_m.h"
+#include "mesh.h"
+#include "quadricfitting.h"
 using namespace std;
 
 struct Voxel{
-    allquadrics::TriangleMesh quadric;
+    Mesh quadric;
     vec3 bmin, bmax;
 };
 
 vector<Voxel> voxels;
 
-void drawMesh(allquadrics::TriangleMesh &mesh, vec3 bmin, vec3 bmax) {
-	glBegin(GL_TRIANGLES);
-	for (size_t i = 0; i < mesh.triangles.size(); i++) {
-        
-        if (i < mesh.triangleTags.size()) {
-            if (mesh.triangleTags[i] == mesh.activeTag) {
-                glColor3d(1,0,0);
-            } else {
-                glColor3d(1,1,1);
-            }
-        }
-		glNormal3dv(&mesh.triangleNormals[i][0]);
-        vec3 v0 = mesh.vertices[mesh.triangles[i].ind[0]];
-        vec3 v1 = mesh.vertices[mesh.triangles[i].ind[1]];
-        vec3 v2 = mesh.vertices[mesh.triangles[i].ind[2]];
-        vec3 vmin = min(v0, min(v1, v2)), vmax = max(v0, max(v1, v2));
-        if (min(vmin, bmin) == bmin && max(vmax, bmax) == bmax) {
-            for (int ii = 0; ii < 3; ii++) {
-                glVertex3dv(&mesh.vertices[mesh.triangles[i].ind[ii]][0]);
-            }
-        }
-	}
-	glEnd();
+inline bool inBox(vec3 point, vec3 bmin, vec3 bmax) {
+    return min(point, bmin) == bmin && max(point, bmax) == bmax;
 }
 
-void display(Viewport &viewport, allquadrics::TriangleMesh &reference) {
+Mesh cvtMesh(allquadrics::TriangleMesh& mesh) {
+    vector<Vertex> vertices;
+    vector<unsigned int> indices;
+    for (int i = 0; i < mesh.vertices.size(); ++i) {
+        Vertex v;
+        v.Position = mesh.vertices[i];
+        v.Normal = mesh.normals[i];
+        v.TexCoords = vec2(0, 0);
+        vertices.emplace_back(v);
+    }
+    for (int i = 0; i < mesh.triangles.size(); ++i) {
+        for (int j = 0; j < 3; ++j) {
+            indices.emplace_back(mesh.triangles[i].ind[j]);
+        }
+    }
+    return Mesh(vertices, indices, vector<Texture>());
+}
 
-    // setup gl state
-    glClearColor(.5f,.7f,1,1);
-    glEnable(GL_NORMALIZE);
-    glDisable(GL_CULL_FACE);
+void buildMesh(allquadrics::Quadric qfit, allquadrics::TriangleMesh& mesh, vec3 bmin, vec3 bmax, int samples) {
+    mesh.clear();
+    vector<vector<double>> upSurface(samples, vector<double>(samples, INFINITY)), downSurface(samples, vector<double>(samples, INFINITY));
+    double gapx = (bmax[0] - bmin[0]) / (samples - 1.f), gapy = (bmax[1] - bmin[1]) / (samples - 1.f);
+    double x = bmin[0], y = bmin[1];
+    for (int i = 0; i < samples; i++, x += gapx) {
+        y = bmin[1];
+        for (int j = 0; j < samples; j++, y += gapy) {
+            double a = qfit.q[9];
+            double b = qfit.q[6] * x + qfit.q[8] * y + qfit.q[3];
+            double c = qfit.q[0] + qfit.q[1] * x + qfit.q[2] * y + qfit.q[4] * x * x + qfit.q[5] * x * y + qfit.q[7] * y * y;
+            double delta = b * b - 4 * a * c;
+            if (delta >= 0) {
+                double z = (-b + sqrt(delta)) / (2 * a);
+                upSurface[i][j] = z;
+                z = (-b - sqrt(delta)) / (2 * a);
+                downSurface[i][j] = z;
+            }
+        }
+    }
+    x = bmin[0];
+    for (int i = 0; i < samples - 1; ++i, x += gapx) {
+        y = bmin[1];
+        for (int j = 0; j < samples - 1; ++j, y += gapy) {
+            {
+                vec3 p0(x, y, upSurface[i][j]), p1(x + gapx, y, upSurface[i + 1][j]), p2(x, y + gapy, upSurface[i][j + 1]), p3(x + gapx, y + gapy, upSurface[i + 1][j + 1]);
+                if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 3, last - 2, last - 1);
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p0, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+            }
+            {
+                vec3 p0(x, y, downSurface[i][j]), p1(x + gapx, y, downSurface[i + 1][j]), p2(x, y + gapy, downSurface[i][j + 1]), p3(x + gapx, y + gapy, downSurface[i + 1][j + 1]);
+                if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 3, last - 2, last - 1);
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p0, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p0);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+                else if (inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
+                    mesh.vertices.emplace_back(p1);
+                    mesh.vertices.emplace_back(p2);
+                    mesh.vertices.emplace_back(p3);
+                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
+                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
+                    int last = mesh.vertices.size() - 1;
+                    mesh.triangles.emplace_back(last - 2, last - 1, last);
+                }
+            }
+        }
+    }
+}
 
-    // clear the screen
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-    
-    // setup the camera
-    viewport.loadView();
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void processInput(GLFWwindow *window);
 
-	glColor3d(1,1,1);
-	drawMesh(reference, vec3(-INFINITY, -INFINITY, -INFINITY), vec3(INFINITY, INFINITY, INFINITY));
+// settings
+const unsigned int SCR_WIDTH = 800;
+const unsigned int SCR_HEIGHT = 600;
 
-	glEnable(GL_BLEND);
-	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glColor4d(.7,.3,.1,.3);
-	glEnable(GL_CULL_FACE);
-    for (int i = 0; i < voxels.size(); ++i) {
-        glCullFace(GL_FRONT);
-        drawMesh(voxels[i].quadric, voxels[i].bmin, voxels[i].bmax);
-        glCullFace(GL_BACK);
-        drawMesh(voxels[i].quadric, voxels[i].bmin, voxels[i].bmax);
+// camera
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+float lastX = SCR_WIDTH / 2.0f;
+float lastY = SCR_HEIGHT / 2.0f;
+bool firstMouse = true;
+
+// timing
+float deltaTime = 0.0f;	// time between current frame and last frame
+float lastFrame = 0.0f;
+
+int main(int argc, char **argv) {
+    // glfw: initialize and configure
+    // ------------------------------
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+#ifdef __APPLE__
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
+
+    // glfw window creation
+    // --------------------
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Test", NULL, NULL);
+    if (window == NULL)
+    {
+        std::cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+
+    // tell GLFW to capture our mouse
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    // glad: load all OpenGL function pointers
+    // ---------------------------------------
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        std::cout << "Failed to initialize GLAD" << std::endl;
+        return -1;
     }
 
-    glfwSwapBuffers();
-}
+    // configure global opengl state
+    // -----------------------------
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+    // build and compile our shader zprogram
+    // ------------------------------------
+    Shader ourShader("shader/simple.vs", "shader/simple.fs");
 
-
-void reshape(int w, int h) {
-    glViewport(0, 0, w, h);
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(90.0, ((double)w / MAX(h, 1)), .0001, 5.0);
-
-    glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-}
-
-
-
-
-int main(int argc, char **argv)
-{
-	Viewport viewport;
-	allquadrics::TriangleMesh inputMesh, quadricMesh;
-
-	const char *defaultInput = "../example_data/default.obj";
-	const char *meshfile = argc > 1 ? argv[1] : 0;
-	if (!meshfile) {
-		cerr << "No mesh file specified?  Loading default mesh: " << defaultInput << endl;
-		meshfile = defaultInput;
-	}
-	if (!inputMesh.loadObj(meshfile)) {
+    allquadrics::TriangleMesh inputMesh, quadricMesh;
+    
+    const char *defaultInput = "../example_data/default.obj";
+    const char *meshfile = argc > 1 ? argv[1] : 0;
+    if (!meshfile) {
+    	cerr << "No mesh file specified?  Loading default mesh: " << defaultInput << endl;
+    	meshfile = defaultInput;
+    }
+    if (meshfile[strlen(meshfile) - 1] == 't') {
+        ifstream in(meshfile);
+        vector<allquadrics::data_pnw> data;
+        while (!in.eof()) {
+            allquadrics::data_pnw pnw;
+            in >> pnw.p[0] >> pnw.p[1] >> pnw.p[2];
+            pnw.n = vec3(0, 0, 0);
+            pnw.w = 1;
+            data.push_back(pnw);
+        }
+        allquadrics::Quadric qfit;
+        allquadrics::fitEllipsoid(data, qfit);
+        ofstream out("ez_param.txt");
+        for (int i = 0; i < 10; ++i) {
+            out << qfit.q[i] << ' ';
+        }
+    }
+    if (!inputMesh.loadObj(meshfile)) {
         cerr << "Couldn't load file " << meshfile << endl;
         return 1;
     }
@@ -112,27 +278,27 @@ int main(int argc, char **argv)
     if (argc > 2) xslice = atoi(argv[2]);
     if (argc > 3) yslice = atoi(argv[3]);
     if (argc > 4) zslice = atoi(argv[4]);
-	
-	// Always recenter and scale your data before fitting!
-	//inputMesh.centerAndScale(1);
+    	
+    // Always recenter and scale your data before fitting!
+    //inputMesh.centerAndScale(1);
     inputMesh.triangleTags.resize(inputMesh.triangles.size(), 0);
     inputMesh.activeTag = 1;
-
+    
     ofstream out("param.txt");
     vec3 slide(xslice, yslice, zslice);
     vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
     for (int i = 0; i < inputMesh.vertices.size(); ++i) {
-        bbmin = min(bbmin, inputMesh.vertices[i]);
-        bbmax = max(bbmax, inputMesh.vertices[i]);
+        bbmin = min(bbmin, vec3(inputMesh.vertices[i]));
+        bbmax = max(bbmax, vec3(inputMesh.vertices[i]));
     }
     vec3 cap = bbmax - bbmin;
-    cap[0] /= (double)xslice; cap[1] /= (double)yslice; cap[2] /= (double)zslice;
+    cap[0] /= (float)xslice; cap[1] /= (float)yslice; cap[2] /= (float)zslice;
     for (int i = 0; i < xslice; ++i) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
                 Voxel voxel;
-                voxel.bmin = bbmin + prod(vec3(i, j, k), cap);
-                voxel.bmax = bbmin + prod(vec3(i + 1, j + 1, k + 1), cap);
+                voxel.bmin = bbmin + vec3(i, j, k) * cap;
+                voxel.bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
                 bool flag = false;
                 for (int t = 0; t < inputMesh.triangles.size(); ++t) {
                     // Use bounding box to find intersected triangles.
@@ -150,13 +316,16 @@ int main(int argc, char **argv)
                 if (flag) {
                     allquadrics::Quadric qfit;
                     allquadrics::fitEllipsoid(inputMesh, qfit);
-                    vec3 r(0, 0, 0);
-                    qfit.buildMeshFromQuadric(voxel.quadric, r, r);
+                    allquadrics::TriangleMesh triMesh;
+                    buildMesh(qfit, triMesh, voxel.bmin, voxel.bmax, 50);
+                    if (!triMesh.triangles.empty()) {
+                        voxel.quadric = cvtMesh(triMesh);
+                    }
                     voxels.push_back(voxel);
                     for (int t = 0; t < inputMesh.triangleTags.size(); ++t) {
                         inputMesh.triangleTags[t] = 0;
                     }
-                    out << voxel.bmin << voxel.bmax;
+                    out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
                     for (int q = 0; q < 10; ++q) {
                         out << ' ' << qfit.q[q];
                     }
@@ -166,135 +335,113 @@ int main(int argc, char **argv)
         }
     }
 
-	int showQuadricFit = 0;
-
-    glfwInit();
-
-    // default window size:
-    int W = 800, H = 500;
-    // Open window
-    int ok = glfwOpenWindow(W, H, 8, 8, 8, 8, 24, 8, GLFW_WINDOW);
-    if( !ok ) { glfwTerminate(); return 0; }
-    // setup gl window/perspective based on window height
-    reshape(W,H);
-
-    // Set window title
-    glfwSetWindowTitle( "Quadric Fitting Demo" );
-
-    // Enable sticky keys
-    glfwEnable( GLFW_STICKY_KEYS );
-	
-    // set some lights
+    // render loop
+    // -----------
+    while (!glfwWindowShouldClose(window))
     {
-       float ambient[3] = { .1f, .1f, .1f };
-       float diffuse[3] = { .4f, .3f, .3f };
-	   float pos[4] = { 0, 2, 0, 0 };
-       
-       glLightfv(GL_LIGHT1, GL_AMBIENT, ambient);
-       glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse);
-       glLightfv(GL_LIGHT1, GL_POSITION, pos);
-       glEnable(GL_LIGHT1);
-    }
-    {
-       float ambient[3] = { .1f, .1f, .1f };
-       float diffuse[3] = { .1f, .2f, .2f};
-       float pos[4] = { 0, 0, -2, 0 };
-       glLightfv(GL_LIGHT2, GL_AMBIENT, ambient);
-       glLightfv(GL_LIGHT2, GL_DIFFUSE, diffuse);
-       glLightfv(GL_LIGHT2, GL_POSITION, pos);
-       glEnable(GL_LIGHT2);
-    }
-    {
-       float ambient[3] = { .1f, .1f, .1f };
-       float diffuse[3] = { .1f, .2f, .1f};
-       float pos[4] = { -1, 0, 0, 0 };
-       glLightfv(GL_LIGHT3, GL_AMBIENT, ambient);
-       glLightfv(GL_LIGHT3, GL_DIFFUSE, diffuse);
-       glLightfv(GL_LIGHT3, GL_POSITION, pos);
-       glEnable(GL_LIGHT3);
-    }
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-    glEnable(GL_COLOR_MATERIAL);
-	glEnable(GL_LIGHTING);
-    glEnable(GL_DEPTH_TEST);
+        // per-frame time logic
+        // --------------------
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
 
-	srand(95);
+        // input
+        // -----
+        processInput(window);
 
-    viewport.resetCam();
+        // render
+        // ------
+        glClearColor(.5f, .7f, 1, 1);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    int mx, my;
-    //glfwDisable( GLFW_MOUSE_CURSOR );
-    glfwGetMousePos(&mx, &my);
+        // don't forget to enable shader before setting uniforms
+        ourShader.use();
 
-	vec3 mousePos;
-    double lastTime = 0, timePerFrame = 1.0/30.0;
+        // view/projection transformations
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = camera.GetViewMatrix();
+        ourShader.setMat4("projection", projection);
+        ourShader.setMat4("view", view);
 
-    vec4 lightPos(-5,5,5,0);
+        // render the loaded model
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // translate it down so it's at the center of the scene
+        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));	// it's a bit too big for our scene, so scale it down
+        ourShader.setMat4("model", model);
 
-    bool mouseWasUp = false;
-    
-    string windowTitle = "Quadric Fitting Demo";
-    glfwSetWindowTitle(windowTitle.c_str());
-
-    // Main rendering loop
-    while (true) {
-
-        bool changedLast = false;
-
-		int logics = 0;
-		while (glfwGetTime() - lastTime > timePerFrame) {
-			{   
-				int nmx, nmy;
-				glfwGetMousePos(&nmx, &nmy);
-
-                if (!glfwGetMouseButton(GLFW_MOUSE_BUTTON_1) && !glfwGetMouseButton(GLFW_MOUSE_BUTTON_2)) {
-                    mouseWasUp = true;
-                }
-
-                if (glfwGetMouseButton(GLFW_MOUSE_BUTTON_1)) { // mouse movements update the view
-                    // Rotate viewport orientation proportional to mouse motion
-                    viewport.mousePos = vec2((double)mx / (double)W,(double)my / (double)H);
-                    vec2 newMouse = vec2((double)nmx / (double)W,(double)nmy / (double)H);
-                    vec2 diff = (newMouse - viewport.mousePos);
-                    double len = diff.length();
-					if (!glfwGetKey('Z') && !glfwGetKey(GLFW_KEY_LALT) && len > .001) {
-                        vec3 axis = vec3(diff[1]/len, diff[0]/len, 0);
-                        viewport.orientation = rotation3D(axis, 180 * len) * viewport.orientation;
-                    }
-                    if ( (glfwGetKey('Z') || glfwGetKey(GLFW_KEY_LALT)) && fabs(diff[1]) > .001) {
-    	                viewport.zoom += diff[1];
-    	                if (viewport.zoom < .001) viewport.zoom = .001;
-                    }
-
-                    //Record the mouse location for drawing crosshairs
-                    viewport.mousePos = newMouse;
-                }
-                
-                mx = nmx; my = nmy;
-			}
-
-			lastTime += timePerFrame;
-			logics++;
-
-			if (changedLast || logics > 10) // slow down if you really can't keep up
-				break;
-		}
-
-		if (logics > 0) {
-
-            display(viewport, inputMesh);
-		}
-		 else {
-            glfwSleep( .001 ); // else release control to OS for 5 ms
+        ourShader.setVec3("cameraPos", camera.Position);
+        //ourModel.Draw(ourShader);
+        for (int i = 0; i < voxels.size(); ++i) {
+            if (!voxels[i].quadric.indices.empty())
+                voxels[i].quadric.Draw(ourShader);
         }
 
-        // Check if the escape key was pressed, or if the window was closed
-        if (glfwGetKey( GLFW_KEY_ESC ) || !glfwGetWindowParam( GLFW_OPENED )) {
-            break;
-        }
+
+        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
+        // -------------------------------------------------------------------------------
+        glfwSwapBuffers(window);
+        glfwPollEvents();
     }
 
-    // cleanup and exit
+    // glfw: terminate, clearing all previously allocated GLFW resources.
+    // ------------------------------------------------------------------
     glfwTerminate();
     return 0;
+}
+
+// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
+// ---------------------------------------------------------------------------------------------------------
+void processInput(GLFWwindow *window)
+{
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
+}
+
+// glfw: whenever the window size changed (by OS or user resize) this callback function executes
+// ---------------------------------------------------------------------------------------------
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    // make sure the viewport matches the new window dimensions; note that width and 
+    // height will be significantly larger than specified on retina displays.
+    glViewport(0, 0, width, height);
+}
+
+
+// glfw: whenever the mouse moves, this callback is called
+// -------------------------------------------------------
+void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
+{
+    float xpos = static_cast<float>(xposIn);
+    float ypos = static_cast<float>(yposIn);
+
+    if (firstMouse)
+    {
+        lastX = xpos;
+        lastY = ypos;
+        firstMouse = false;
+    }
+
+    float xoffset = xpos - lastX;
+    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+
+    lastX = xpos;
+    lastY = ypos;
+
+    camera.ProcessMouseMovement(xoffset, yoffset);
+}
+
+// glfw: whenever the mouse scroll wheel scrolls, this callback is called
+// ----------------------------------------------------------------------
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
