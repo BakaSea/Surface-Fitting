@@ -156,13 +156,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\camera.h" />
-    <ClInclude Include="src\glutils.h" />
     <ClInclude Include="src\mesh.h" />
     <ClInclude Include="src\quadricfitting.h" />
     <ClInclude Include="src\roots3and4.h" />
     <ClInclude Include="src\shader_m.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shader\raytrace.fs" />
+    <None Include="shader\raytrace.vs" />
     <None Include="shader\simple.fs" />
     <None Include="shader\simple.vs" />
   </ItemGroup>

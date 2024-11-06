@@ -1,11 +1,10 @@
-#version 330 core
-out vec4 FragColor;
-
+#version 460 core
 in vec3 worldPos;
 in vec3 worldNormal;
 in vec2 TexCoords;
 
-uniform sampler2D texture_diffuse1;
+out vec4 FragColor;
+
 uniform vec3 cameraPos;
 
 void main() {

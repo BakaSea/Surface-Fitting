@@ -8,7 +8,7 @@ cnt = 0
 with open('SurfaceFitting/param.txt') as f:
     for line in f.readlines():
         term = line.split(' ')
-        x0, y0, z0, x1, y1, z1, J, G, H, I, A, D, E, B, F, C = term
+        x0, y0, z0, x1, y1, z1, A, B, C, D, E, F, G, H, I, J = term
         x0 = float(x0)
         y0 = float(y0)
         z0 = float(z0)
@@ -25,12 +25,11 @@ with open('SurfaceFitting/param.txt') as f:
         H = float(H)
         I = float(I)
         J = float(J)
+        # print(A, B, C, D, E, F, G, H, I, J)
         x = np.linspace(x0, x1, 10)
         y = np.linspace(y0, y1, 10)
         x, y = np.meshgrid(x, y)
         p = []
-        if A*B < 0 or A*C < 0 or B*C < 0:
-            print('fuck')
         for i in np.arange(x.shape[0]):
             for j in np.arange(x.shape[1]):
                 a = C
@@ -62,6 +61,6 @@ mesh = trimesh.load('example_data/bunny_zip.obj')
 vertices = mesh.vertices
 faces = mesh.faces
 #ax.plot_trisurf(vertices[:, 0], vertices[:, 1], faces, vertices[:, 2], alpha=0.5)
-ax.view_init(elev=-149, azim=-121)
+#ax.view_init(elev=-149, azim=-121)
 
 plt.show()

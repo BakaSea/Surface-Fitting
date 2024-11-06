@@ -29,9 +29,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\glutils.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="src\quadricfitting.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -53,6 +50,12 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="shader\simple.vs">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shader\raytrace.fs">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shader\raytrace.vs">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

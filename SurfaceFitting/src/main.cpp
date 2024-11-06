@@ -13,10 +13,19 @@ using namespace std;
 struct Voxel{
     Mesh quadric;
     allquadrics::TriangleMesh mesh;
+    float q[10];
     vec3 bmin, bmax;
 };
 
 vector<vector<vector<Voxel>>> voxels;
+
+struct VoxelData {
+    float q[10];
+    float bmin[3];
+    float bmax[3];
+};
+
+vector<VoxelData> voxelDatas;
 
 inline bool inBox(vec3 point, vec3 bmin, vec3 bmax) {
     return min(point, bmin) == bmin && max(point, bmax) == bmax;
@@ -238,8 +247,8 @@ int main(int argc, char **argv) {
     // glfw: initialize and configure
     // ------------------------------
     glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 #ifdef __APPLE__
@@ -279,7 +288,7 @@ int main(int argc, char **argv) {
 
     // build and compile our shader zprogram
     // ------------------------------------
-    Shader ourShader("shader/simple.vs", "shader/simple.fs");
+    Shader raytraceShader("shader/raytrace.vs", "shader/raytrace.fs");
 
     allquadrics::TriangleMesh inputMesh, quadricMesh;
     
@@ -330,47 +339,7 @@ int main(int argc, char **argv) {
     }
     vec3 cap = bbmax - bbmin;
     cap[0] /= (float)xslice; cap[1] /= (float)yslice; cap[2] /= (float)zslice;
-    //for (int i = 0; i < xslice; ++i) {
-    //    for (int j = 0; j < yslice; ++j) {
-    //        for (int k = 0; k < zslice; ++k) {
-    //            Voxel voxel;
-    //            voxel.bmin = bbmin + vec3(i, j, k) * cap;
-    //            voxel.bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
-    //            bool flag = false;
-    //            for (int t = 0; t < inputMesh.triangles.size(); ++t) {
-    //                // Use bounding box to find intersected triangles.
-    //                vec3 v0 = inputMesh.vertices[inputMesh.triangles[t].ind[0]];
-    //                vec3 v1 = inputMesh.vertices[inputMesh.triangles[t].ind[1]];
-    //                vec3 v2 = inputMesh.vertices[inputMesh.triangles[t].ind[2]];
-    //                vec3 vmin = min(v0, min(v1, v2)), vmax = max(v0, max(v1, v2));
-    //                if (!(voxel.bmin[0] > vmax[0] || voxel.bmax[0] < vmin[0]
-    //                    || voxel.bmin[1] > vmax[1] || voxel.bmax[1] < vmin[1]
-    //                    || voxel.bmin[2] > vmax[2] || voxel.bmax[2] < vmin[2])) {
-    //                    inputMesh.triangleTags[t] = 1;
-    //                    flag = true;
-    //                }
-    //            }
-    //            if (flag) {
-    //                allquadrics::Quadric qfit;
-    //                allquadrics::fitEllipsoid(inputMesh, qfit);
-    //                allquadrics::TriangleMesh triMesh;
-    //                buildMesh(qfit, triMesh, voxel.bmin, voxel.bmax, 50);
-    //                if (!triMesh.triangles.empty()) {
-    //                    voxel.quadric = cvtMesh(triMesh);
-    //                }
-    //                voxels.push_back(voxel);
-    //                for (int t = 0; t < inputMesh.triangleTags.size(); ++t) {
-    //                    inputMesh.triangleTags[t] = 0;
-    //                }
-    //                out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
-    //                for (int q = 0; q < 10; ++q) {
-    //                    out << ' ' << qfit.q[q];
-    //                }
-    //                out << endl;
-    //            }
-    //        }
-    //    }
-    //}
+    double startTime = glfwGetTime();
     for (int i = 0; i < xslice; ++i) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
@@ -412,29 +381,70 @@ int main(int argc, char **argv) {
     for (int i = 0; i < xslice; ++i) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
-                if (!voxels[i][j][k].mesh.triangles.empty()) {
-                    voxels[i][j][k].mesh.computeNormals();
+                auto& voxel = voxels[i][j][k];
+                if (!voxel.mesh.triangles.empty()) {
+                    voxel.mesh.computeNormals();
                     allquadrics::Quadric qfit;
-                    allquadrics::fitEllipsoid(voxels[i][j][k].mesh, qfit);
-                    allquadrics::TriangleMesh triMesh;
-                    buildMesh(qfit, triMesh, voxels[i][j][k].bmin, voxels[i][j][k].bmax, 50);
-                    if (!triMesh.triangles.empty()) {
-                        voxels[i][j][k].quadric = cvtMesh(triMesh);
-                    }
-                    out << voxels[i][j][k].bmin[0] << ' ' << voxels[i][j][k].bmin[1] << ' ' << voxels[i][j][k].bmin[2] << ' ' << voxels[i][j][k].bmax[0] << ' ' << voxels[i][j][k].bmax[1] << ' ' << voxels[i][j][k].bmax[2];
+                    allquadrics::fitEllipsoid(voxel.mesh, qfit);
+                    out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
+                    voxel.q[0] = qfit.q[4];
+                    voxel.q[1] = qfit.q[7];
+                    voxel.q[2] = qfit.q[9];
+                    voxel.q[3] = qfit.q[5];
+                    voxel.q[4] = qfit.q[6];
+                    voxel.q[5] = qfit.q[8];
+                    voxel.q[6] = qfit.q[1];
+                    voxel.q[7] = qfit.q[2];
+                    voxel.q[8] = qfit.q[3];
+                    voxel.q[9] = qfit.q[0];
                     for (int q = 0; q < 10; ++q) {
-                        out << ' ' << qfit.q[q];
+                        out << ' ' << voxel.q[q];
                     }
                     out << endl;
                 }
             }
         }
     }
+    double endTime = glfwGetTime();
+    cout << (endTime - startTime) * 1000 << "ms" << endl;
+
+    for (int i = 0; i < xslice; ++i) {
+        for (int j = 0; j < yslice; ++j) {
+            for (int k = 0; k < zslice; ++k) {
+                auto& voxel = voxels[i][j][k];
+                if (!voxel.mesh.triangles.empty()) {
+                    VoxelData vd;
+                    memcpy(vd.q, voxel.q, sizeof(voxel.q));
+                    for (int d = 0; d < 3; ++d) {
+                        vd.bmin[d] = voxel.bmin[d];
+                        vd.bmax[d] = voxel.bmax[d];
+                    }
+                    voxelDatas.emplace_back(vd);
+                }
+            }
+        }
+    }
+    GLuint voxelDatasBuffer;
+    glCreateBuffers(1, &voxelDatasBuffer);
+    glNamedBufferStorage(voxelDatasBuffer, sizeof(VoxelData)* voxelDatas.size(), (const void*)voxelDatas.data(), GL_DYNAMIC_STORAGE_BIT);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, voxelDatasBuffer);
+    GLuint vao;
+    glGenVertexArrays(1, &vao);
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    const static GLfloat vertices[] = {
+        -1.0f,  1.0f,  1.0f,  1.0f,  1.0f, -1.0f,
+        1.0f,  -1.0f, -1.0f, -1.0f, -1.0f,  1.0f };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glBindVertexArray(0);
 
     // render loop
     // -----------
-    while (!glfwWindowShouldClose(window))
-    {
+    while (!glfwWindowShouldClose(window)) {
         // per-frame time logic
         // --------------------
         float currentFrame = static_cast<float>(glfwGetTime());
@@ -451,36 +461,20 @@ int main(int argc, char **argv) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // don't forget to enable shader before setting uniforms
-        ourShader.use();
+        raytraceShader.use();
 
-        // view/projection transformations
+        //// view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
-        ourShader.setMat4("projection", projection);
-        ourShader.setMat4("view", view);
 
-        // render the loaded model
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // translate it down so it's at the center of the scene
-        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));	// it's a bit too big for our scene, so scale it down
-        ourShader.setMat4("model", model);
-
-        ourShader.setVec3("cameraPos", camera.Position);
-        //ourModel.Draw(ourShader);
-        //for (int i = 0; i < voxels.size(); ++i) {
-        //    if (!voxels[i].quadric.indices.empty())
-        //        voxels[i].quadric.Draw(ourShader);
-        //}
-        for (int i = 0; i < xslice; ++i) {
-            for (int j = 0; j < yslice; ++j) {
-                for (int k = 0; k < zslice; ++k) {
-                    if (!voxels[i][j][k].quadric.indices.empty()) {
-                        voxels[i][j][k].quadric.Draw(ourShader);
-                    }
-                }
-            }
-        }
-
+        raytraceShader.setMat4("viewInv", inverse(view));
+        raytraceShader.setMat4("projectionInv", inverse(projection));
+        raytraceShader.setVec3("cameraPos", camera.Position);
+        raytraceShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
+        raytraceShader.setInt("voxelSize", voxelDatas.size());
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
