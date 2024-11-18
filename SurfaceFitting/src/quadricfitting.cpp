@@ -75,6 +75,8 @@ dmat3 getQmat(T *q) {
 
 struct QuadricFieldFitter {
     double M[100], N[100];
+    vector<dvec3> points;
+    vector<double> weights;
     QuadricFieldFitter() { clear(0); }
 
     void clear(int sizehint) {
@@ -114,77 +116,9 @@ struct QuadricFieldFitter {
         return msum / nsum;
     }
 
-    void addPosition(double scale, const dvec3 &p) {
-        double c[10];
-        double cx[10],cy[10],cz[10];
-        double x = p[0], y = p[1], z = p[2];
-
-        // coefficient vector
-        c[0] = 1;
-        c[1] = x;
-        c[2] = y;
-        c[3] = z;
-        c[4] = x*x;
-        c[5] = x*y;
-        c[6] = x*z;
-        c[7] = y*y;
-        c[8] = y*z;
-        c[9] = z*z;
-
-        // partial derivative vector's coefficient vectors
-        for (int i = 0; i < 10; i++) { cx[i] = cy[i] = cz[i] = 0; }
-        cx[1] = 1; cx[4] = 2*x; cx[5] = y; cx[6] = z;
-        cy[2] = 1; cy[5] = x; cy[7] = 2*y; cy[8] = z;
-        cz[3] = 1; cz[6] = x; cz[8] = y; cz[9] = 2*z;
-
-        // add cross products to accumulator matrices
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
-                M[i*10+j] += c[i]*c[j] * scale;
-                N[i*10+j] += (cx[i]*cx[j] + cy[i]*cy[j] + cz[i]*cz[j]) * scale;
-            }
-        }
-    }
-    void addNormal(double scale, const dvec3 &p, const dvec3 &n) {
-        double cx[10],cy[10],cz[10];
-        double x = p[0], y = p[1], z = p[2];
-
-        // partial derivative vector's coefficient vectors
-        for (int i = 0; i < 10; i++) { cx[i] = cy[i] = cz[i] = 0; }
-        cx[1] = 1; cx[4] = 2*x; cx[5] = y; cx[6] = z;
-        cy[2] = 1; cy[5] = x; cy[7] = 2*y; cy[8] = z;
-        cz[3] = 1; cz[6] = x; cz[8] = y; cz[9] = 2*z;
-
-        // add cross products to accumulator matrices
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 10; j++) {
-                N[i*10+j] += (cx[i]*cx[j] + cy[i]*cy[j] + cz[i]*cz[j]) * scale;
-            }
-        }
-
-		/*if (g_optk.gradientErrorWt > 0) {
-            dvec3 t = findOrtho(n);
-            dvec3 b = t%n;
-            b.normalize();
-
-            // square vectors:
-            double ct[10], cb[10];
-            for (int i = 0; i < 10; i++) {
-                ct[i] = cx[i]*t[0]+cy[i]*t[1]+cz[i]*t[2];
-                cb[i] = cx[i]*b[0]+cy[i]*b[1]+cz[i]*b[2];
-            }
-
-            double gradwt = g_optk.gradientErrorWt;
-            for (int i = 0; i < 10; i++) {
-                for (int j = 0; j < 10; j++) {
-                    M[i*10+j] += ct[i]*ct[j] * scale * gradwt;
-                    M[i*10+j] += cb[i]*cb[j] * scale * gradwt;
-                }
-            }
-        }*/
-    }
-
     void addEl(double scale, const dvec3 &p, const dvec3 &n) {
+        points.emplace_back(p);
+        weights.emplace_back(scale);
         double c[10];
         double cx[10],cy[10],cz[10];
         double x = p[0], y = p[1], z = p[2];
@@ -214,28 +148,15 @@ struct QuadricFieldFitter {
                 N[i*10+j] += (cx[i]*cx[j] + cy[i]*cy[j] + cz[i]*cz[j]) * scale;
             }
         }
+    }
 
-		// code to account for error in the normals as well; commented out for release (b/c it required a new parameter and didn't seem to have a huge effect in practice)
-/*        if (g_optk.gradientErrorWt > 0) {
-            dvec3 t = findOrtho(n);
-            dvec3 b = t%n;
-            b.normalize();
-
-            // square vectors:
-            double ct[10], cb[10];
-            for (int i = 0; i < 10; i++) {
-                ct[i] = cx[i]*t[0]+cy[i]*t[1]+cz[i]*t[2];
-                cb[i] = cx[i]*b[0]+cy[i]*b[1]+cz[i]*b[2];
-            }
-
-            double gradwt = g_optk.gradientErrorWt;
-            for (int i = 0; i < 10; i++) {
-                for (int j = 0; j < 10; j++) {
-                    M[i*10+j] += ct[i]*ct[j] * scale * gradwt;
-                    M[i*10+j] += cb[i]*cb[j] * scale * gradwt;
-                }
-            }
-        }*/
+    double getVariance(const Quadric& q) {
+        double var = 0;
+        for (int i = 0; i < points.size(); ++i) {
+            var += weights[i] * pow(q.f(points[i]), 2);
+        }
+        var /= 1.0 * points.size();
+        return var;
     }
 
     void getParams(vector<double> &tofill, int forceType = -1); // uses lapack stuff that is included in the cpp file
@@ -448,7 +369,7 @@ void QuadricFieldFitter::getParams(std::vector<double> &tofill, int forceType) {
 
 
 template <class DataIterator>
-void fitEllipsoidHelper(DataIterator first, DataIterator last, Quadric &field) {
+double fitEllipsoidHelper(DataIterator first, DataIterator last, Quadric &field) {
     QuadricFieldFitter qff;
     
 	for (DataIterator i = first; i != last; i++) {
@@ -471,6 +392,7 @@ void fitEllipsoidHelper(DataIterator first, DataIterator last, Quadric &field) {
 
     if (hyper < 1) {
         field.init(q0);
+        return qff.getVariance(field);
     } else {
         qff.lineSearch(q0, q1, eh, ee, ep, eph, epe, th, te, tp, tph, tpe);
 
@@ -492,6 +414,7 @@ void fitEllipsoidHelper(DataIterator first, DataIterator last, Quadric &field) {
         }
 
         field.init(optEllParams);
+        return qff.getVariance(field);
     }
 }
 
@@ -577,11 +500,11 @@ class dunavantIterator
 };	
 
 //Fits an ellipsoid
-void fitEllipsoid(std::vector<data_pnw> &data, Quadric &quadric) {
-    fitEllipsoidHelper(data.begin(), data.end(), quadric);
+double fitEllipsoid(std::vector<data_pnw> &data, Quadric &quadric) {
+    return fitEllipsoidHelper(data.begin(), data.end(), quadric);
 }
-void fitEllipsoid(TriangleMesh &mesh, Quadric &quadric) {
-    fitEllipsoidHelper(dunavantIterator(mesh), dunavantIterator::end(mesh), quadric);
+double fitEllipsoid(TriangleMesh &mesh, Quadric &quadric) {
+    return fitEllipsoidHelper(dunavantIterator(mesh), dunavantIterator::end(mesh), quadric);
 }
 
 namespace { 

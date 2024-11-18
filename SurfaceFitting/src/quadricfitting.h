@@ -37,8 +37,8 @@ struct Quadric;
 // THE FITTING FUNCTIONS!
 
 //Fits an ellipsoid
-void fitEllipsoid(std::vector<data_pnw> &data, Quadric &quadric);
-void fitEllipsoid(TriangleMesh &mesh, Quadric &quadric);
+double fitEllipsoid(std::vector<data_pnw> &data, Quadric &quadric);
+double fitEllipsoid(TriangleMesh &mesh, Quadric &quadric);
 
 
 // IDs for all quadric types we fit; the fitAllQuadrics functions return the quadrics in this order

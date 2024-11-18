@@ -1,5 +1,7 @@
 #include <fstream>
 #include <map>
+#include <vector>
+#include <span>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -8,12 +10,15 @@
 #include "shader_m.h"
 #include "mesh.h"
 #include "quadricfitting.h"
+#include "ellipsoidhull.h"
 using namespace std;
 
 struct Voxel{
     Mesh quadric;
     allquadrics::TriangleMesh mesh;
     float q[10];
+    float hullQ[10];
+    float var;
     vec3 bmin, bmax;
 };
 
@@ -21,8 +26,10 @@ vector<vector<vector<Voxel>>> voxels;
 
 struct VoxelData {
     float q[10];
+    float hullQ[10];
     float bmin[3];
     float bmax[3];
+    float sigma;
 };
 
 vector<VoxelData> voxelDatas;
@@ -331,6 +338,7 @@ int main(int argc, char **argv) {
     inputMesh.activeTag = 1;
     
     ofstream out("param.txt");
+    ofstream outHull("hull.txt");
     vec3 slide(xslice, yslice, zslice);
     vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
     for (int i = 0; i < inputMesh.vertices.size(); ++i) {
@@ -385,7 +393,7 @@ int main(int argc, char **argv) {
                 if (!voxel.mesh.triangles.empty()) {
                     voxel.mesh.computeNormals();
                     allquadrics::Quadric qfit;
-                    allquadrics::fitEllipsoid(voxel.mesh, qfit);
+                    voxel.var = allquadrics::fitEllipsoid(voxel.mesh, qfit);
                     out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
                     voxel.q[0] = qfit.q[4];
                     voxel.q[1] = qfit.q[7];
@@ -400,7 +408,14 @@ int main(int argc, char **argv) {
                     for (int q = 0; q < 10; ++q) {
                         out << ' ' << voxel.q[q];
                     }
-                    out << endl;
+                    out << sqrt(voxel.var) << endl;
+                    Ellipsoid e = compute_bounding_ellipsoid(voxel.mesh.vertices);
+                    e.getParam(voxel.hullQ);
+                    outHull << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
+                    for (int q = 0; q < 10; ++q) {
+                        outHull << ' ' << voxel.hullQ[q];
+                    }
+                    outHull << endl;
                 }
             }
         }
@@ -415,10 +430,12 @@ int main(int argc, char **argv) {
                 if (!voxel.mesh.triangles.empty()) {
                     VoxelData vd;
                     memcpy(vd.q, voxel.q, sizeof(voxel.q));
+                    memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
                     for (int d = 0; d < 3; ++d) {
                         vd.bmin[d] = voxel.bmin[d];
                         vd.bmax[d] = voxel.bmax[d];
                     }
+                    vd.sigma = sqrt(voxel.var);
                     voxelDatas.emplace_back(vd);
                 }
             }
@@ -503,6 +520,22 @@ void processInput(GLFWwindow *window)
         camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+        float yoffset = camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
+        camera.ProcessMouseMovement(0, yoffset);
+    }
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+        float yoffset = -camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
+        camera.ProcessMouseMovement(0, yoffset);
+    }
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+        float xoffset = camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
+        camera.ProcessMouseMovement(xoffset, 0);
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+        float xoffset = -camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
+        camera.ProcessMouseMovement(xoffset, 0);
+    }
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
