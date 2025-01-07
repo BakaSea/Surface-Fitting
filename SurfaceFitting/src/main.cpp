@@ -1,3 +1,4 @@
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <fstream>
 #include <map>
 #include <vector>
@@ -5,28 +6,29 @@
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "tiny_obj_loader.h"
 
 #include "camera.h"
 #include "shader_m.h"
-#include "mesh.h"
-#include "quadricfitting.h"
-#include "ellipsoidhull.h"
+#include "surface_fit.h"
+#include "triangle_clip.h"
+//#include "mesh.h"
+//#include "quadricfitting.h"
+//#include "ellipsoidhull.h"
 using namespace std;
 
 struct Voxel{
-    Mesh quadric;
-    allquadrics::TriangleMesh mesh;
-    float q[10];
-    float hullQ[10];
-    float var;
+    QuadricFit fit;
+    Quadric quadric;
     vec3 bmin, bmax;
+    int vertices;
 };
 
 vector<vector<vector<Voxel>>> voxels;
 
 struct VoxelData {
     float q[10];
-    float hullQ[10];
+    //float hullQ[10];
     float bmin[3];
     float bmax[3];
     float sigma;
@@ -36,199 +38,6 @@ vector<VoxelData> voxelDatas;
 
 inline bool inBox(vec3 point, vec3 bmin, vec3 bmax) {
     return min(point, bmin) == bmin && max(point, bmax) == bmax;
-}
-
-Mesh cvtMesh(allquadrics::TriangleMesh& mesh) {
-    vector<Vertex> vertices;
-    vector<unsigned int> indices;
-    for (int i = 0; i < mesh.vertices.size(); ++i) {
-        Vertex v;
-        v.Position = mesh.vertices[i];
-        v.Normal = mesh.normals[i];
-        v.TexCoords = vec2(0, 0);
-        vertices.emplace_back(v);
-    }
-    for (int i = 0; i < mesh.triangles.size(); ++i) {
-        for (int j = 0; j < 3; ++j) {
-            indices.emplace_back(mesh.triangles[i].ind[j]);
-        }
-    }
-    return Mesh(vertices, indices, vector<Texture>());
-}
-
-void buildMesh(allquadrics::Quadric qfit, allquadrics::TriangleMesh& mesh, vec3 bmin, vec3 bmax, int samples) {
-    mesh.clear();
-    vector<vector<double>> upSurface(samples, vector<double>(samples, INFINITY)), downSurface(samples, vector<double>(samples, INFINITY));
-    double gapx = (bmax[0] - bmin[0]) / (samples - 1.f), gapy = (bmax[1] - bmin[1]) / (samples - 1.f);
-    double x = bmin[0], y = bmin[1];
-    for (int i = 0; i < samples; i++, x += gapx) {
-        y = bmin[1];
-        for (int j = 0; j < samples; j++, y += gapy) {
-            double a = qfit.q[9];
-            double b = qfit.q[6] * x + qfit.q[8] * y + qfit.q[3];
-            double c = qfit.q[0] + qfit.q[1] * x + qfit.q[2] * y + qfit.q[4] * x * x + qfit.q[5] * x * y + qfit.q[7] * y * y;
-            double delta = b * b - 4 * a * c;
-            if (delta >= 0) {
-                double z = (-b + sqrt(delta)) / (2 * a);
-                upSurface[i][j] = z;
-                z = (-b - sqrt(delta)) / (2 * a);
-                downSurface[i][j] = z;
-            }
-        }
-    }
-    x = bmin[0];
-    for (int i = 0; i < samples - 1; ++i, x += gapx) {
-        y = bmin[1];
-        for (int j = 0; j < samples - 1; ++j, y += gapy) {
-            {
-                vec3 p0(x, y, upSurface[i][j]), p1(x + gapx, y, upSurface[i + 1][j]), p2(x, y + gapy, upSurface[i][j + 1]), p3(x + gapx, y + gapy, upSurface[i + 1][j + 1]);
-                if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 3, last - 2, last - 1);
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p0, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-            }
-            {
-                vec3 p0(x, y, downSurface[i][j]), p1(x + gapx, y, downSurface[i + 1][j]), p2(x, y + gapy, downSurface[i][j + 1]), p3(x + gapx, y + gapy, downSurface[i + 1][j + 1]);
-                if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 3, last - 2, last - 1);
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p0, bmin, bmax) && inBox(p1, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p0, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p0);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p0)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-                else if (inBox(p1, bmin, bmax) && inBox(p2, bmin, bmax) && inBox(p3, bmin, bmax)) {
-                    mesh.vertices.emplace_back(p1);
-                    mesh.vertices.emplace_back(p2);
-                    mesh.vertices.emplace_back(p3);
-                    mesh.normals.emplace_back(normalize(qfit.df(p1)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p2)));
-                    mesh.normals.emplace_back(normalize(qfit.df(p3)));
-                    int last = mesh.vertices.size() - 1;
-                    mesh.triangles.emplace_back(last - 2, last - 1, last);
-                }
-            }
-        }
-    }
-}
-
-vector<vec3> clipTriangle(const vector<vec3>& triangle, vec3 bmin, vec3 bmax) {
-    vector<vec3> res(triangle), p;
-    for (int k = 0; k < 3; ++k) {
-        p = res;
-        res.clear();
-        for (int i = 0; i < p.size(); ++i) {
-            vec3 e = p[(i + 1) % p.size()] - p[i];
-            if (e[k] != 0) {
-                float t = (bmin[k] - p[i][k]) / e[k];
-                if (0 < t && t < 1) {
-                    res.emplace_back(p[i] + t * e);
-                }
-            }
-            if (p[(i + 1) % p.size()][k] >= bmin[k]) {
-                res.emplace_back(p[(i + 1) % p.size()]);
-            }
-        }
-        p = res;
-        res.clear();
-        for (int i = 0; i < p.size(); ++i) {
-            vec3 e = p[(i + 1) % p.size()] - p[i];
-            if (e[k] != 0) {
-                float t = (bmax[k] - p[i][k]) / e[k];
-                if (0 < t && t < 1) {
-                    res.emplace_back(p[i] + t * e);
-                }
-            }
-            if (p[(i + 1) % p.size()][k] <= bmax[k]) {
-                res.emplace_back(p[(i + 1) % p.size()]);
-            }
-        }
-    }
-    return res;
 }
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -296,8 +105,6 @@ int main(int argc, char **argv) {
     // build and compile our shader zprogram
     // ------------------------------------
     Shader raytraceShader("shader/raytrace.vs", "shader/raytrace.fs");
-
-    allquadrics::TriangleMesh inputMesh, quadricMesh;
     
     const char *defaultInput = "../example_data/default.obj";
     const char *meshfile = argc > 1 ? argv[1] : 0;
@@ -305,45 +112,44 @@ int main(int argc, char **argv) {
     	cerr << "No mesh file specified?  Loading default mesh: " << defaultInput << endl;
     	meshfile = defaultInput;
     }
-    if (meshfile[strlen(meshfile) - 1] == 't') {
-        ifstream in(meshfile);
-        vector<allquadrics::data_pnw> data;
-        while (!in.eof()) {
-            allquadrics::data_pnw pnw;
-            in >> pnw.p[0] >> pnw.p[1] >> pnw.p[2];
-            pnw.n = vec3(0, 0, 0);
-            pnw.w = 1;
-            data.push_back(pnw);
+    tinyobj::ObjReaderConfig readerConfig;
+    tinyobj::ObjReader reader;
+    if (!reader.ParseFromFile(meshfile, readerConfig)) {
+        if (!reader.Error().empty()) {
+            cerr << "TinyObjReader: " << reader.Error();
         }
-        allquadrics::Quadric qfit;
-        allquadrics::fitEllipsoid(data, qfit);
-        ofstream out("ez_param.txt");
-        for (int i = 0; i < 10; ++i) {
-            out << qfit.q[i] << ' ';
-        }
+        exit(1);
     }
-    if (!inputMesh.loadObj(meshfile)) {
-        cerr << "Couldn't load file " << meshfile << endl;
-        return 1;
+    if (!reader.Warning().empty()) {
+        cout << "TinyObjReader: " << reader.Warning();
     }
+
     int xslice = 1, yslice = 1, zslice = 1;
     if (argc > 2) xslice = atoi(argv[2]);
     if (argc > 3) yslice = atoi(argv[3]);
     if (argc > 4) zslice = atoi(argv[4]);
     voxels = vector<vector<vector<Voxel>>>(xslice, vector<vector<Voxel>>(yslice, vector<Voxel>(zslice)));
-    	
-    // Always recenter and scale your data before fitting!
-    //inputMesh.centerAndScale(1);
-    inputMesh.triangleTags.resize(inputMesh.triangles.size(), 0);
-    inputMesh.activeTag = 1;
     
     ofstream out("param.txt");
-    ofstream outHull("hull.txt");
+    //ofstream outHull("hull.txt");
     vec3 slide(xslice, yslice, zslice);
     vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
-    for (int i = 0; i < inputMesh.vertices.size(); ++i) {
-        bbmin = min(bbmin, vec3(inputMesh.vertices[i]));
-        bbmax = max(bbmax, vec3(inputMesh.vertices[i]));
+    auto& attrib = reader.GetAttrib();
+    auto& shapes = reader.GetShapes();
+    for (size_t s = 0; s < shapes.size(); ++s) {
+        size_t index_offset = 0;
+        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); ++f) {
+            size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+            for (size_t v = 0; v < fv; ++v) {
+                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                tinyobj::real_t vx = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
+                tinyobj::real_t vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
+                tinyobj::real_t vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
+
+            }
+            index_offset += fv;
+
+        }
     }
     vec3 cap = bbmax - bbmin;
     cap[0] /= (float)xslice; cap[1] /= (float)yslice; cap[2] /= (float)zslice;
@@ -353,7 +159,6 @@ int main(int argc, char **argv) {
             for (int k = 0; k < zslice; ++k) {
                 voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
                 voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
-                voxels[i][j][k].mesh.clear();
             }
         }
     }
@@ -374,7 +179,6 @@ int main(int argc, char **argv) {
                 for (int k = zstart; k <= zend; ++k) {
                     vector<vec3> points = clipTriangle(tri, voxels[i][j][k].bmin, voxels[i][j][k].bmax);
                     if (points.size() >= 3) {
-                        int vs = voxels[i][j][k].mesh.vertices.size();
                         for (int p = 0; p < points.size(); ++p) {
                             voxels[i][j][k].mesh.vertices.emplace_back(points[p]);
                         }
@@ -390,32 +194,13 @@ int main(int argc, char **argv) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
                 auto& voxel = voxels[i][j][k];
-                if (!voxel.mesh.triangles.empty()) {
-                    voxel.mesh.computeNormals();
-                    allquadrics::Quadric qfit;
-                    voxel.var = allquadrics::fitEllipsoid(voxel.mesh, qfit);
+                if (voxel.vertices > 0) {
+                    voxel.quadric = voxel.fit.fitQuadric();
                     out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
-                    voxel.q[0] = qfit.q[4];
-                    voxel.q[1] = qfit.q[7];
-                    voxel.q[2] = qfit.q[9];
-                    voxel.q[3] = qfit.q[5];
-                    voxel.q[4] = qfit.q[6];
-                    voxel.q[5] = qfit.q[8];
-                    voxel.q[6] = qfit.q[1];
-                    voxel.q[7] = qfit.q[2];
-                    voxel.q[8] = qfit.q[3];
-                    voxel.q[9] = qfit.q[0];
                     for (int q = 0; q < 10; ++q) {
-                        out << ' ' << voxel.q[q];
+                        out << ' ' << voxel.quadric.c[q];
                     }
-                    out << sqrt(voxel.var) << endl;
-                    Ellipsoid e = compute_bounding_ellipsoid(voxel.mesh.vertices);
-                    e.getParam(voxel.hullQ);
-                    outHull << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
-                    for (int q = 0; q < 10; ++q) {
-                        outHull << ' ' << voxel.hullQ[q];
-                    }
-                    outHull << endl;
+                    out << voxel.quadric.sigma << endl;
                 }
             }
         }
@@ -427,15 +212,15 @@ int main(int argc, char **argv) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
                 auto& voxel = voxels[i][j][k];
-                if (!voxel.mesh.triangles.empty()) {
+                if (voxel.vertices > 0) {
                     VoxelData vd;
-                    memcpy(vd.q, voxel.q, sizeof(voxel.q));
-                    memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
+                    memcpy(vd.q, voxel.quadric.c, sizeof(voxel.quadric.c));
+                    //memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
                     for (int d = 0; d < 3; ++d) {
                         vd.bmin[d] = voxel.bmin[d];
                         vd.bmax[d] = voxel.bmax[d];
                     }
-                    vd.sigma = sqrt(voxel.var);
+                    vd.sigma = voxel.quadric.sigma;
                     voxelDatas.emplace_back(vd);
                 }
             }

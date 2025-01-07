@@ -5,7 +5,6 @@
 
 struct VoxelData{
     float q[10];
-    float hullQ[10];
     float bmin[3];
     float bmax[3];
     float sigma;
@@ -76,14 +75,14 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax, float rnd
         float t = (-b-sqrtDelta)/(2*a);
         if (tMin < t && t < tMax) {
             vec3 p = r.o+t*r.d;
-            if (min(p, bmin) == bmin && max(p, bmax) == bmax && f(voxel.hullQ, p) <= 0.1f) {
+            if (min(p, bmin) == bmin && max(p, bmax) == bmax) {
                 res.t = min(res.t, t);
             }
         }
         t = (-b+sqrtDelta)/(2*a);
         if (tMin < t && t < tMax) {
             vec3 p = r.o+t*r.d;
-            if (min(p, bmin) == bmin && max(p, bmax) == bmax && f(voxel.hullQ, p) <= 0.1f) {
+            if (min(p, bmin) == bmin && max(p, bmax) == bmax) {
                 res.t = min(res.t, t);
             }
         }

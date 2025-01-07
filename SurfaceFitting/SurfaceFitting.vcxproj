@@ -158,6 +158,7 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\quadricfitting.cpp" />
     <ClCompile Include="src\roots3and4.cpp" />
+    <ClCompile Include="src\surface_fit.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\camera.h" />
@@ -166,6 +167,9 @@
     <ClInclude Include="src\quadricfitting.h" />
     <ClInclude Include="src\roots3and4.h" />
     <ClInclude Include="src\shader_m.h" />
+    <ClInclude Include="src\surface_fit.h" />
+    <ClInclude Include="src\tiny_obj_loader.h" />
+    <ClInclude Include="src\triangle_clip.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shader\raytrace.fs" />
