@@ -4,8 +4,10 @@
 using namespace std;
 using namespace glm;
 
-vector<vec3> clipTriangle(const vector<vec3>& triangle, vec3 bmin, vec3 bmax) {
-    vector<vec3> res(triangle), p;
+vector<vec3> clipTriangle(const vec3 triangle[3], vec3 bmin, vec3 bmax) {
+    vector<vec3> res(3), p;
+    for (int i = 0; i < 3; ++i)
+        res[i] = triangle[i];
     for (int k = 0; k < 3; ++k) {
         p = res;
         res.clear();

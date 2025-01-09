@@ -30,6 +30,12 @@
     <ClCompile Include="src\ellipsoidhull.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\surface_fit.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\voxel_handle.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\quadricfitting.h">
@@ -50,6 +56,21 @@
     <ClInclude Include="src\ellipsoidhull.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\surface_fit.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\tiny_obj_loader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\triangle_clip.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\voxel_handle.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\shader_c.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shader\simple.fs">
@@ -62,6 +83,9 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="shader\raytrace.vs">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="shader\raytrace.comp">
       <Filter>资源文件</Filter>
     </None>
   </ItemGroup>

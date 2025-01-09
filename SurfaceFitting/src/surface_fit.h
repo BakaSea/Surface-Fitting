@@ -8,6 +8,12 @@ struct Quadric {
 	
 	float c[10], sigma;
 
+	Quadric() {
+		for (int i = 0; i < 10; ++i)
+			c[i] = 0;
+		sigma = 0;
+	}
+
 	Quadric(float param[10], float s) {
 		for (int i = 0; i < 10; ++i)
 			c[i] = param[i];
@@ -30,8 +36,14 @@ struct Quadric {
 
 struct QuadricFit {
 
-	MatrixXf M = MatrixXf(10, 10);
-	MatrixXf N = MatrixXf(10, 10);
+	MatrixXf M, N;
+	int vertices;
+
+	QuadricFit() {
+		M = MatrixXf::Zero(10, 10);
+		N = MatrixXf::Zero(10, 10);
+		vertices = 0;
+	}
 
 	void addPoint(const vec3& p, float w);
 
@@ -40,3 +52,9 @@ struct QuadricFit {
 	Quadric fitQuadric() const;
 
 };
+
+inline bool inBox(vec3 point, vec3 bmin, vec3 bmax) {
+	return bmin.x - std::numeric_limits<float>::epsilon() <= point.x && point.x <= bmax.x + std::numeric_limits<float>::epsilon()
+		&& bmin.y - std::numeric_limits<float>::epsilon() <= point.y && point.y <= bmax.y + std::numeric_limits<float>::epsilon()
+		&& bmin.z - std::numeric_limits<float>::epsilon() <= point.z && point.z <= bmax.z + std::numeric_limits<float>::epsilon();
+}

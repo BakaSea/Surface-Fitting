@@ -1,4 +1,3 @@
-#define TINYOBJLOADER_IMPLEMENTATION
 #include <fstream>
 #include <map>
 #include <vector>
@@ -10,21 +9,12 @@
 
 #include "camera.h"
 #include "shader_m.h"
-#include "surface_fit.h"
-#include "triangle_clip.h"
-//#include "mesh.h"
+#include "shader_c.h"
+#include "voxel_handle.h"
+#include "mesh.h"
 //#include "quadricfitting.h"
 //#include "ellipsoidhull.h"
 using namespace std;
-
-struct Voxel{
-    QuadricFit fit;
-    Quadric quadric;
-    vec3 bmin, bmax;
-    int vertices;
-};
-
-vector<vector<vector<Voxel>>> voxels;
 
 struct VoxelData {
     float q[10];
@@ -36,14 +26,11 @@ struct VoxelData {
 
 vector<VoxelData> voxelDatas;
 
-inline bool inBox(vec3 point, vec3 bmin, vec3 bmax) {
-    return min(point, bmin) == bmin && max(point, bmax) == bmax;
-}
-
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow *window);
+void renderQuad();
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -105,7 +92,24 @@ int main(int argc, char **argv) {
     // build and compile our shader zprogram
     // ------------------------------------
     Shader raytraceShader("shader/raytrace.vs", "shader/raytrace.fs");
+    ComputeShader rtCompShader("shader/raytrace.comp");
+    raytraceShader.use();
+    raytraceShader.setInt("tex", 0);
+    Shader simpleShader("shader/simple.vs", "shader/simple.fs");
     
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
     const char *defaultInput = "../example_data/default.obj";
     const char *meshfile = argc > 1 ? argv[1] : 0;
     if (!meshfile) {
@@ -128,91 +132,33 @@ int main(int argc, char **argv) {
     if (argc > 2) xslice = atoi(argv[2]);
     if (argc > 3) yslice = atoi(argv[3]);
     if (argc > 4) zslice = atoi(argv[4]);
-    voxels = vector<vector<vector<Voxel>>>(xslice, vector<vector<Voxel>>(yslice, vector<Voxel>(zslice)));
-    
-    ofstream out("param.txt");
+
     //ofstream outHull("hull.txt");
-    vec3 slide(xslice, yslice, zslice);
-    vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
+    float scale = 10.0f;
+
+    vector<Vertex> vtx;
+    vector<unsigned int> ind;
+    for (int i = 0; i < attrib.vertices.size(); i += 3) {
+        vec3 position = vec3(attrib.vertices[i], attrib.vertices[i + 1], attrib.vertices[i + 2]) * scale;
+        vec3 normal = vec3(0);
+        vtx.push_back(Vertex(position, normal, vec2(0)));
+    }
     for (size_t s = 0; s < shapes.size(); ++s) {
-        size_t index_offset = 0;
-        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); ++f) {
-            size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
-            for (size_t v = 0; v < fv; ++v) {
-                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
-                tinyobj::real_t vx = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
-                tinyobj::real_t vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
-                tinyobj::real_t vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
+        for (int i = 0; i < shapes[s].mesh.indices.size(); ++i) {
+            ind.push_back(shapes[s].mesh.indices[i].vertex_index);
+        }
+    }
+    Mesh mesh(vtx, ind, {});
 
-            }
-            index_offset += fv;
-
-        }
-    }
-    vec3 cap = bbmax - bbmin;
-    cap[0] /= (float)xslice; cap[1] /= (float)yslice; cap[2] /= (float)zslice;
-    double startTime = glfwGetTime();
-    for (int i = 0; i < xslice; ++i) {
-        for (int j = 0; j < yslice; ++j) {
-            for (int k = 0; k < zslice; ++k) {
-                voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
-                voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
-            }
-        }
-    }
-    for (const auto& triangle : inputMesh.triangles) {
-        vec3 v0 = inputMesh.vertices[triangle.ind[0]];
-        vec3 v1 = inputMesh.vertices[triangle.ind[1]];
-        vec3 v2 = inputMesh.vertices[triangle.ind[2]];
-        vector<vec3> tri = { v0, v1, v2 };
-        vec3 tmin = min(v0, min(v1, v2)), tmax = max(v0, max(v1, v2));
-        int xstart = std::max(int((tmin.x - bbmin.x) / cap.x), 0);
-        int ystart = std::max(int((tmin.y - bbmin.y) / cap.y), 0);
-        int zstart = std::max(int((tmin.z - bbmin.z) / cap.z), 0);
-        int xend = std::min(int((tmax.x - bbmin.x) / cap.x), xslice - 1);
-        int yend = std::min(int((tmax.y - bbmin.y) / cap.y), yslice - 1);
-        int zend = std::min(int((tmax.z - bbmin.z) / cap.z), zslice - 1);
-        for (int i = xstart; i <= xend; ++i) {
-            for (int j = ystart; j <= yend; ++j) {
-                for (int k = zstart; k <= zend; ++k) {
-                    vector<vec3> points = clipTriangle(tri, voxels[i][j][k].bmin, voxels[i][j][k].bmax);
-                    if (points.size() >= 3) {
-                        for (int p = 0; p < points.size(); ++p) {
-                            voxels[i][j][k].mesh.vertices.emplace_back(points[p]);
-                        }
-                        for (int p = 1; p <= points.size() - 2; ++p) {
-                            voxels[i][j][k].mesh.triangles.emplace_back(allquadrics::Tri(vs + 0, vs + p, vs + p + 1));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    for (int i = 0; i < xslice; ++i) {
-        for (int j = 0; j < yslice; ++j) {
-            for (int k = 0; k < zslice; ++k) {
-                auto& voxel = voxels[i][j][k];
-                if (voxel.vertices > 0) {
-                    voxel.quadric = voxel.fit.fitQuadric();
-                    out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
-                    for (int q = 0; q < 10; ++q) {
-                        out << ' ' << voxel.quadric.c[q];
-                    }
-                    out << voxel.quadric.sigma << endl;
-                }
-            }
-        }
-    }
-    double endTime = glfwGetTime();
-    cout << (endTime - startTime) * 1000 << "ms" << endl;
+    VoxelLayer layer(meshfile, ivec3(xslice, yslice, zslice));
 
     for (int i = 0; i < xslice; ++i) {
         for (int j = 0; j < yslice; ++j) {
             for (int k = 0; k < zslice; ++k) {
-                auto& voxel = voxels[i][j][k];
-                if (voxel.vertices > 0) {
+                auto& voxel = layer.voxels[i][j][k];
+                if (voxel.fit.vertices > 0) {
                     VoxelData vd;
                     memcpy(vd.q, voxel.quadric.c, sizeof(voxel.quadric.c));
                     //memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
@@ -229,20 +175,7 @@ int main(int argc, char **argv) {
     GLuint voxelDatasBuffer;
     glCreateBuffers(1, &voxelDatasBuffer);
     glNamedBufferStorage(voxelDatasBuffer, sizeof(VoxelData)* voxelDatas.size(), (const void*)voxelDatas.data(), GL_DYNAMIC_STORAGE_BIT);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, voxelDatasBuffer);
-    GLuint vao;
-    glGenVertexArrays(1, &vao);
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    const static GLfloat vertices[] = {
-        -1.0f,  1.0f,  1.0f,  1.0f,  1.0f, -1.0f,
-        1.0f,  -1.0f, -1.0f, -1.0f, -1.0f,  1.0f };
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glBindVertexArray(0);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxelDatasBuffer);
 
     // render loop
     // -----------
@@ -259,24 +192,27 @@ int main(int argc, char **argv) {
 
         // render
         // ------
-        glClearColor(.5f, .7f, 1, 1);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // don't forget to enable shader before setting uniforms
-        raytraceShader.use();
-
-        //// view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
 
-        raytraceShader.setMat4("viewInv", inverse(view));
-        raytraceShader.setMat4("projectionInv", inverse(projection));
-        raytraceShader.setVec3("cameraPos", camera.Position);
-        raytraceShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
-        raytraceShader.setInt("voxelSize", voxelDatas.size());
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        glBindVertexArray(0);
+        rtCompShader.use();
+        rtCompShader.setMat4("viewInv", inverse(view));
+        rtCompShader.setMat4("projectionInv", inverse(projection));
+        rtCompShader.setVec3("cameraPos", camera.Position);
+        rtCompShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
+        rtCompShader.setInt("voxelSize", voxelDatas.size());
+        glDispatchCompute(SCR_WIDTH, SCR_HEIGHT, 1);
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        raytraceShader.use();
+        renderQuad();
+
+        simpleShader.use();
+        simpleShader.setMat4("model", mat4(1.0f));
+        simpleShader.setMat4("projection", projection);
+        simpleShader.setMat4("view", view);
+        mesh.Draw(simpleShader);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
@@ -288,6 +224,35 @@ int main(int argc, char **argv) {
     // ------------------------------------------------------------------
     glfwTerminate();
     return 0;
+}
+
+// renderQuad() renders a 1x1 XY quad in NDC
+// -----------------------------------------
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void renderQuad() {
+    if (quadVAO == 0) {
+        float quadVertices[] = {
+            // positions        // texture Coords
+            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+            1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+            1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
