@@ -3,6 +3,11 @@
 
 void QuadricFit::addPoint(const vec3& p, float w) {
 	vertices++;
+	float prevWeightSum = weightSum;
+	weightSum += w;
+	M *= prevWeightSum / weightSum;
+	N *= prevWeightSum / weightSum;
+	w /= weightSum;
 	float x = p.x, y = p.y, z = p.z;
 	float c[10] = {
 		x*x, y*y, z*z,
@@ -31,10 +36,11 @@ const float dunavantY[6] = {0.445948490915965, 0.445948490915965, 0.108103018168
 void QuadricFit::addTriangle(const vec3 tri[3]) {
 	vec3 bmin = min(tri[0], min(tri[1], tri[2]));
 	vec3 bmax = max(tri[0], max(tri[1], tri[2]));
+	float area = length(cross(tri[1] - tri[0], tri[2] - tri[0])) / 2.f;
 	for (int i = 0; i < 6; ++i) {
 		vec3 p = tri[0] * (1.f - dunavantX[i] - dunavantY[i]) + tri[1] * dunavantX[i] + tri[2] * dunavantY[i];
 		assert(inBox(p, bmin, bmax));
-		addPoint(p, dunavantW[i]);
+		addPoint(p, dunavantW[i] * area);
 	}
 }
 

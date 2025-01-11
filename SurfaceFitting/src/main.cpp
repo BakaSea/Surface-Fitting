@@ -21,6 +21,8 @@ struct VoxelData {
     //float hullQ[10];
     float bmin[3];
     float bmax[3];
+    float sigma_a[3];
+    float sigma_s[3];
     float sigma;
 };
 
@@ -166,6 +168,8 @@ int main(int argc, char **argv) {
                         vd.bmin[d] = voxel.bmin[d];
                         vd.bmax[d] = voxel.bmax[d];
                     }
+                    vd.sigma_a[0] = .3f; vd.sigma_a[1] = .4f; vd.sigma_a[2] = .5f;
+                    vd.sigma_s[0] = .7f; vd.sigma_s[1] = .6f; vd.sigma_s[2] = .5f;
                     vd.sigma = voxel.quadric.sigma;
                     voxelDatas.emplace_back(vd);
                 }
@@ -201,6 +205,7 @@ int main(int argc, char **argv) {
         rtCompShader.setVec3("cameraPos", camera.Position);
         rtCompShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
         rtCompShader.setInt("voxelSize", voxelDatas.size());
+        glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, NULL);
         glDispatchCompute(SCR_WIDTH, SCR_HEIGHT, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
@@ -208,11 +213,11 @@ int main(int argc, char **argv) {
         raytraceShader.use();
         renderQuad();
 
-        simpleShader.use();
-        simpleShader.setMat4("model", mat4(1.0f));
-        simpleShader.setMat4("projection", projection);
-        simpleShader.setMat4("view", view);
-        mesh.Draw(simpleShader);
+        //simpleShader.use();
+        //simpleShader.setMat4("model", mat4(1.0f));
+        //simpleShader.setMat4("projection", projection);
+        //simpleShader.setMat4("view", view);
+        //mesh.Draw(simpleShader);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------

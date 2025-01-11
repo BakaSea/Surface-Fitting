@@ -37,11 +37,13 @@ struct Quadric {
 struct QuadricFit {
 
 	MatrixXf M, N;
+	float weightSum;
 	int vertices;
 
 	QuadricFit() {
 		M = MatrixXf::Zero(10, 10);
 		N = MatrixXf::Zero(10, 10);
+		weightSum = 0.f;
 		vertices = 0;
 	}
 
