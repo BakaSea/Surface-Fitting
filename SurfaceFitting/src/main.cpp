@@ -43,10 +43,13 @@ Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
+bool moved = false;
 
 // timing
 float deltaTime = 0.0f;	// time between current frame and last frame
 float lastFrame = 0.0f;
+
+float imgColor[SCR_WIDTH * SCR_HEIGHT * 4];
 
 int main(int argc, char **argv) {
     // glfw: initialize and configure
@@ -171,6 +174,7 @@ int main(int argc, char **argv) {
                     vd.sigma_a[0] = .3f; vd.sigma_a[1] = .4f; vd.sigma_a[2] = .5f;
                     vd.sigma_s[0] = .7f; vd.sigma_s[1] = .6f; vd.sigma_s[2] = .5f;
                     vd.sigma = voxel.quadric.sigma;
+                    //vd.sigma = 0.001f;
                     voxelDatas.emplace_back(vd);
                 }
             }
@@ -181,6 +185,7 @@ int main(int argc, char **argv) {
     glNamedBufferStorage(voxelDatasBuffer, sizeof(VoxelData)* voxelDatas.size(), (const void*)voxelDatas.data(), GL_DYNAMIC_STORAGE_BIT);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxelDatasBuffer);
 
+    int currentSample = 1;
     // render loop
     // -----------
     while (!glfwWindowShouldClose(window)) {
@@ -205,9 +210,32 @@ int main(int argc, char **argv) {
         rtCompShader.setVec3("cameraPos", camera.Position);
         rtCompShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
         rtCompShader.setInt("voxelSize", voxelDatas.size());
-        glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, NULL);
+        if (moved) {
+            currentSample = 1;
+            glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, NULL);
+            moved = false;
+        } else {
+            currentSample++;
+        }
+        rtCompShader.setInt("currentSample", currentSample);
         glDispatchCompute(SCR_WIDTH, SCR_HEIGHT, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        //if (currentSample == 1 || currentSample == 16 || currentSample == 64 || currentSample == 128 || currentSample == 256 || currentSample == 512 || currentSample == 1024) {
+        //    glBindTexture(GL_TEXTURE_2D, texture);
+        //    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, imgColor);
+        //    float R = 0, G = 0, B = 0;
+        //    for (int i = 0; i < SCR_WIDTH; ++i) {
+        //        for (int j = 0; j < SCR_HEIGHT; ++j) {
+        //            R += imgColor[i * SCR_HEIGHT * 4 + j * 4];
+        //            G += imgColor[i * SCR_HEIGHT * 4 + j * 4 + 1];
+        //            B += imgColor[i * SCR_HEIGHT * 4 + j * 4 + 2];
+        //        }
+        //    }
+        //    R /= SCR_WIDTH * SCR_HEIGHT;
+        //    G /= SCR_WIDTH * SCR_HEIGHT;
+        //    B /= SCR_WIDTH * SCR_HEIGHT;
+        //    cout << R << ' ' << G << ' ' << B << endl;
+        //}
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         raytraceShader.use();
@@ -267,29 +295,40 @@ void processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
         camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        moved = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
         camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        moved = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
         camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        moved = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
         camera.ProcessKeyboard(RIGHT, deltaTime);
+    }
     if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
         float yoffset = camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
         camera.ProcessMouseMovement(0, yoffset);
+        moved = true;
     }
     if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
         float yoffset = -camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
         camera.ProcessMouseMovement(0, yoffset);
+        moved = true;
     }
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
         float xoffset = camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
         camera.ProcessMouseMovement(xoffset, 0);
+        moved = true;
     }
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
         float xoffset = -camera.MovementSpeed * deltaTime / camera.MouseSensitivity * 10.f;
         camera.ProcessMouseMovement(xoffset, 0);
+        moved = true;
     }
 }
 
@@ -323,6 +362,10 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
     lastX = xpos;
     lastY = ypos;
 
+    if (xoffset > epsilon<float>() || yoffset > epsilon<float>()) {
+        moved = true;
+    }
+
     camera.ProcessMouseMovement(xoffset, yoffset);
 }
 
@@ -330,5 +373,8 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
 // ----------------------------------------------------------------------
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
+    if (yoffset > epsilon<float>()) {
+        moved = true;
+    }
     camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }

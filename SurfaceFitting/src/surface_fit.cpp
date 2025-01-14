@@ -63,5 +63,9 @@ Quadric QuadricFit::fitQuadric() const {
 	float c[10];
 	for (int i = 0; i < 10; ++i)
 		c[i] = ges.eigenvectors().col(minCol)[i].real();
-	return Quadric(c, sqrt(minVal));
+	VectorXf vc(10);
+	for (int i = 0; i < 10; ++i)
+		vc[i] = c[i];
+	float var = minVal * vc.transpose() * N * vc;
+	return Quadric(c, sqrt(var));
 }

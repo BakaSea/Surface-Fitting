@@ -22,7 +22,7 @@ VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
 
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
-    float scale = 10.0f;
+    float scale = 5.0f;
     vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
 
     for (size_t s = 0; s < shapes.size(); ++s) {
@@ -48,7 +48,7 @@ VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
         for (int j = 0; j < slice[1]; ++j) {
             for (int k = 0; k < slice[2]; ++k) {
                 voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
-                voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap;
+                voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap - vec3(1e-4f);
             }
         }
     }
@@ -101,7 +101,7 @@ VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
             for (int k = 0; k < slice[2]; ++k) {
                 auto& voxel = voxels[i][j][k];
                 if (voxel.fit.vertices > 0) {
-                    cout << "Fit " << i << ' ' << j << ' ' << k << endl;
+                    //cout << "Fit " << i << ' ' << j << ' ' << k << endl;
                     voxel.quadric = voxel.fit.fitQuadric();
                     out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
                     for (int q = 0; q < 10; ++q) {
