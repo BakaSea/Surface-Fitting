@@ -21,8 +21,8 @@ struct VoxelData {
     //float hullQ[10];
     float bmin[3];
     float bmax[3];
-    float sigma_a[3];
-    float sigma_s[3];
+    float sggx[6];
+    float albedo[3];
     float sigma;
 };
 
@@ -167,12 +167,17 @@ int main(int argc, char **argv) {
                     VoxelData vd;
                     memcpy(vd.q, voxel.quadric.c, sizeof(voxel.quadric.c));
                     //memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
+                    vd.sggx[0] = voxel.sggx.S_xx;
+                    vd.sggx[1] = voxel.sggx.S_xy;
+                    vd.sggx[2] = voxel.sggx.S_xz;
+                    vd.sggx[3] = voxel.sggx.S_yy;
+                    vd.sggx[4] = voxel.sggx.S_yz;
+                    vd.sggx[5] = voxel.sggx.S_zz;
                     for (int d = 0; d < 3; ++d) {
                         vd.bmin[d] = voxel.bmin[d];
                         vd.bmax[d] = voxel.bmax[d];
                     }
-                    vd.sigma_a[0] = .3f; vd.sigma_a[1] = .4f; vd.sigma_a[2] = .5f;
-                    vd.sigma_s[0] = .7f; vd.sigma_s[1] = .6f; vd.sigma_s[2] = .5f;
+                    vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
                     vd.sigma = voxel.quadric.sigma;
                     //vd.sigma = 0.001f;
                     voxelDatas.emplace_back(vd);

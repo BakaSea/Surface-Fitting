@@ -108,6 +108,7 @@ VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
                         out << ' ' << voxel.quadric.c[q];
                     }
                     out << voxel.quadric.sigma << endl;
+                    voxel.sggx = voxel.fit.fitSGGX();
                 }
             }
         }

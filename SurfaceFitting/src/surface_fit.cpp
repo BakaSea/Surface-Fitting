@@ -36,12 +36,27 @@ const float dunavantY[6] = {0.445948490915965, 0.445948490915965, 0.108103018168
 void QuadricFit::addTriangle(const vec3 tri[3]) {
 	vec3 bmin = min(tri[0], min(tri[1], tri[2]));
 	vec3 bmax = max(tri[0], max(tri[1], tri[2]));
-	float area = length(cross(tri[1] - tri[0], tri[2] - tri[0])) / 2.f;
+	vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
+	vec3 n = cross(e1, e2);
+	float area = length(n) / 2.f;
+	n = normalize(n);
 	for (int i = 0; i < 6; ++i) {
 		vec3 p = tri[0] * (1.f - dunavantX[i] - dunavantY[i]) + tri[1] * dunavantX[i] + tri[2] * dunavantY[i];
 		assert(inBox(p, bmin, bmax));
 		addPoint(p, dunavantW[i] * area);
+		//addPoint(p, dunavantW[i]);
 	}
+	float prevNormalWeightSum = normalWeightSum;
+	normalWeightSum += area;
+	SigmaNormal *= prevNormalWeightSum / normalWeightSum;
+	normalSum *= prevNormalWeightSum / normalWeightSum;
+	float wNormal = area / normalWeightSum;
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			SigmaNormal(i, j) += wNormal * n[i] * n[j];
+		}
+	}
+	normalSum += wNormal * n;
 }
 
 Quadric QuadricFit::fitQuadric() const {
@@ -68,4 +83,22 @@ Quadric QuadricFit::fitQuadric() const {
 		vc[i] = c[i];
 	float var = minVal * vc.transpose() * N * vc;
 	return Quadric(c, sqrt(var));
+}
+
+SGGX QuadricFit::fitSGGX() const {
+	SelfAdjointEigenSolver<Matrix3f> saes;
+	saes.compute(SigmaNormal);
+	mat3 omegas;
+	vec3 sigma;
+	for (int i = 0; i < 3; ++i) {
+		Vector3f omega = saes.eigenvectors().col(i);
+		omegas[i] = vec3(omega.x(), omega.y(), omega.z());
+		sigma[i] = dot(normalSum, omegas[i]);
+	}
+	mat3 diag(0.f);
+	for (int i = 0; i < 3; ++i) {
+		diag[i][i] = sigma[i] * sigma[i];
+	}
+	mat3 S = omegas * diag * transpose(omegas);
+	return SGGX(S);
 }

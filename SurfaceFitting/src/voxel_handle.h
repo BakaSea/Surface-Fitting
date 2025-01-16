@@ -6,6 +6,7 @@ using namespace std;
 struct Voxel {
     QuadricFit fit;
     Quadric quadric;
+    SGGX sggx;
     vec3 bmin, bmax;
 };
 

@@ -34,16 +34,41 @@ struct Quadric {
 
 };
 
+struct SGGX {
+
+	float S_xx, S_xy, S_xz, S_yy, S_yz, S_zz;
+
+	SGGX() {
+		S_xx = S_xy = S_xz = S_yy = S_yz = S_zz = 0;
+	}
+
+	SGGX(mat3 S) {
+		S_xx = S[0][0];
+		S_xy = S[0][1];
+		S_xz = S[0][2];
+		S_yy = S[1][1];
+		S_yz = S[1][2];
+		S_zz = S[2][2];
+	}
+
+};
+
 struct QuadricFit {
 
 	MatrixXf M, N;
+	Matrix3f SigmaNormal;
+	vec3 normalSum;
 	float weightSum;
+	float normalWeightSum;
 	int vertices;
 
 	QuadricFit() {
 		M = MatrixXf::Zero(10, 10);
 		N = MatrixXf::Zero(10, 10);
+		SigmaNormal = Matrix3f::Zero();
+		normalSum = vec3(0.f);
 		weightSum = 0.f;
+		normalWeightSum = 0;
 		vertices = 0;
 	}
 
@@ -52,6 +77,8 @@ struct QuadricFit {
 	void addTriangle(const vec3 tri[3]);
 
 	Quadric fitQuadric() const;
+
+	SGGX fitSGGX() const;
 
 };
 

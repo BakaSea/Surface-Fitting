@@ -59,5 +59,6 @@ vec3 tonemapping(vec3 color) {
 void main() {
     vec3 texCol = texture(tex, TexCoords).rgb;
     //vec3 texCol = smartDeNoise(tex, TexCoords, 1.5f, 1.5f, 0.5f).rgb;
-    FragColor = vec4(tonemapping(texCol), 1.0f);
+    texCol = tonemapping(texCol);
+    FragColor = vec4(texCol, 1.0f);
 }
