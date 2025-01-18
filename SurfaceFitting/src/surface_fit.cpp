@@ -1,5 +1,6 @@
 #include "surface_fit.h"
 #include <iostream>
+using namespace std;
 
 void QuadricFit::addPoint(const vec3& p, float w) {
 	vertices++;

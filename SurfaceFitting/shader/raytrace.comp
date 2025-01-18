@@ -43,10 +43,6 @@ struct SGGX {
     float S_xx, S_xy, S_xz, S_yy, S_yz, S_zz;
 };
 
-struct PhaseFunction {
-    float g;
-};
-
 // Random number generation using pcg32i_random_t, using inc = 1. Our random state is a uint.
 uint stepRNG(uint rngState) {
   return rngState * 747796405 + 1;
@@ -77,6 +73,46 @@ int sampleEvent(float u, float pAbsorb, float pScatter, float pNull) {
     return 2;
 }
 
+vec3 sampleVNDF(const vec3 wi, SGGX sggx, float u1, float u2) {
+    // generate sample (u, v, w)
+    const float r = sqrt(u1);
+    const float phi = 2.0f*M_PI*u2;
+    const float u = r*cos(phi);
+    const float v= r*sin(phi);
+    const float w = sqrt(1.0f-u*u-v*v);
+    // build orthonormal basis
+    vec3 wk, wj;
+    if(wi.z < -0.9999999f) {
+        wk = vec3 (0.0f, -1.0f, 0.0f);
+        wj = vec3 (-1.0f, 0.0f, 0.0f);
+    } else {
+        float a = 1.0f/(1.0f+wi.z);
+        float b = -wi.x*wi.y*a ;
+        wk = vec3(1.0f-wi.x*wi.x*a, b, -wi.x);
+        wj = vec3(b, 1.0f-wi.y*wi.y*a, -wi.y);
+    }
+    // project S in this basis
+    float S_kk = wk.x*wk.x*sggx.S_xx+wk.y*wk.y*sggx.S_yy+wk.z*wk.z*sggx.S_zz+2.0f*(wk.x*wk.y*sggx.S_xy+wk.x*wk.z*sggx.S_xz+wk.y*wk.z*sggx.S_yz);
+    float S_jj = wj.x*wj.x*sggx.S_xx+wj.y*wj.y*sggx.S_yy+wj.z*wj.z*sggx.S_zz+2.0f*(wj.x*wj.y*sggx.S_xy+wj.x*wj.z*sggx.S_xz+wj.y*wj.z*sggx.S_yz);
+    float S_ii = wi.x*wi.x*sggx.S_xx+wi.y*wi.y*sggx.S_yy+wi.z*wi.z*sggx.S_zz+2.0f*(wi.x*wi.y*sggx.S_xy+wi.x*wi.z*sggx.S_xz+wi.y*wi.z*sggx.S_yz);
+    float S_kj = wk.x*wj.x*sggx.S_xx+wk.y*wj.y*sggx.S_yy+wk.z*wj.z*sggx.S_zz
+        +(wk.x*wj.y+wk.y*wj.x)*sggx.S_xy+(wk.x*wj.z+wk.z*wj.x)*sggx.S_xz+(wk.y*wj.z+wk.z*wj.y)*sggx.S_yz;
+    float S_ki = wk.x*wi.x*sggx.S_xx+wk.y*wi.y*sggx.S_yy+wk.z*wi.z*sggx.S_zz
+        +(wk.x*wi.y+wk.y*wi.x)*sggx.S_xy+(wk.x*wi.z+wk.z*wi.x)*sggx.S_xz+(wk.y*wi.z+wk.z*wi.y)*sggx.S_yz;
+    float S_ji = wj.x*wi.x*sggx.S_xx+wj.y*wi.y*sggx.S_yy+wj.z*wi.z*sggx.S_zz
+        +(wj.x*wi.y+wj.y*wi.x)*sggx.S_xy+(wj.x*wi.z+wj.z*wi.x)*sggx.S_xz+(wj.y*wi.z+wj.z*wi.y)*sggx.S_yz;
+    // compute normal
+    float sqrtDetSkji = sqrt(abs(S_kk*S_jj*S_ii-S_kj*S_kj*S_ii-S_ki*S_ki*S_jj-S_ji*S_ji*S_kk+2.0f*S_kj*S_ki*S_ji));
+    float inv_sqrtS_ii = 1.0f/sqrt(S_ii);
+    float tmp = sqrt(S_jj*S_ii-S_ji*S_ji);
+    vec3 Mk = vec3(sqrtDetSkji/tmp, 0.0f, 0.0f);
+    vec3 Mj = vec3(-inv_sqrtS_ii*(S_ki*S_ji-S_kj*S_ii)/tmp, inv_sqrtS_ii*tmp, 0);
+    vec3 Mi = vec3(inv_sqrtS_ii*S_ki, inv_sqrtS_ii*S_ji, inv_sqrtS_ii*S_ii);
+    vec3 wm_kji = normalize(u*Mk+v*Mj+w*Mi);
+    // rotate back to world basis
+    return wm_kji.x*wk+wm_kji.y*wj+wm_kji.z*wi;
+}
+
 float average(vec3 v) {
     return (v.x+v.y+v.z)/3.f;
 }
@@ -98,14 +134,11 @@ vec3 df(float q[10], vec3 p) {
         );
 }
 
-PhaseFunction getPhaseFunction(VoxelData voxel, vec3 intr) {
-    PhaseFunction phase = {.9f};
-    return phase;
-}
-
-float phasePdf(PhaseFunction phase, vec3 wo, vec3 wi) {
-    float denom = 1+phase.g*phase.g+2*phase.g*dot(wo, wi);
-    return INV4PI*(1.f-phase.g*phase.g)/(denom*sqrt(denom));
+float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
+    // sample VNDF
+    vec3 wm = sampleVNDF(wi, sggx, random(), random());
+    // eval diffuse
+    return 1.0f/M_PI*max(0.0f, dot(wo, wm));
 }
 
 float sigmaWi(vec3 wi, SGGX sggx) {
@@ -213,11 +246,11 @@ IntersectResult intersect(Ray r, float tMax) {
 }
 
 vec3 lightPos = vec3(0.f, 1.f, 0.f);
-vec3 lightI = vec3(1000.f);
+vec3 lightI = vec3(100.f);
 //vec3 ambientL = vec3(.5f, .7f, 1.f);
 vec3 ambientL = vec3(0.f);
 
-vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, PhaseFunction phase) {
+vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase) {
     vec3 wi = lightPos-intr;
     float sqrDist  = dot(wi, wi);
     wi = normalize(wi);
@@ -333,7 +366,7 @@ vec3 LiVoxel(Ray r, int idx) {
     vec3 sigma_maj = vec3(sigma_wi/GaussianDistrubtion(0, 0, voxel.sigma));
     vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
 
-    return vec3(sggx.S_yy, sggx.S_yz, sggx.S_zz);
+    //return vec3(sggx.S_yy, sggx.S_yz, sggx.S_zz);
 
     if (sigma_maj[0] == 0) {
         T_maj *= exp(-tMax*sigma_maj);
@@ -366,10 +399,8 @@ vec3 LiVoxel(Ray r, int idx) {
                     float pdf = T_maj[0]*sigma_s[0];
                     beta *= T_maj*sigma_s/pdf;
                     r_u *= T_maj*sigma_s/pdf;
-                    vec3 p = r.o+t*r.d;
-                    PhaseFunction phase = getPhaseFunction(voxel, p);
                     //return vec3(1.f);
-                    return sampleLd(p, -r.d, beta, r_u, phase);
+                    return sampleLd(p, -r.d, beta, r_u, sggx);
                 } else {
                     vec3 sigma_n = max(sigma_maj-sigma_a-sigma_s, vec3(0.f));
                     float pdf = T_maj[0]*sigma_n[0];
