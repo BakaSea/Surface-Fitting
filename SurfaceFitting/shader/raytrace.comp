@@ -43,6 +43,11 @@ struct SGGX {
     float S_xx, S_xy, S_xz, S_yy, S_yz, S_zz;
 };
 
+vec3 lightPos = vec3(1.f, 1.f, 1.f);
+vec3 lightI = vec3(100.f);
+//vec3 ambientL = vec3(.5f, .7f, 1.f);
+vec3 ambientL = vec3(0.f);
+
 // Random number generation using pcg32i_random_t, using inc = 1. Our random state is a uint.
 uint stepRNG(uint rngState) {
   return rngState * 747796405 + 1;
@@ -57,7 +62,7 @@ float stepAndOutputRNGFloat(inout uint rngState) {
   return float(word) / 4294967295.0f;
 }
 
-uint rngState =  (600 * gl_GlobalInvocationID.x + gl_GlobalInvocationID.y)*currentSample;
+uint rngState =  800*600*currentSample+600*gl_GlobalInvocationID.x+gl_GlobalInvocationID.y;
 
 float random() {
     return stepAndOutputRNGFloat(rngState);
@@ -87,10 +92,12 @@ vec3 sampleVNDF(const vec3 wi, SGGX sggx, float u1, float u2) {
         wj = vec3 (-1.0f, 0.0f, 0.0f);
     } else {
         float a = 1.0f/(1.0f+wi.z);
-        float b = -wi.x*wi.y*a ;
+        float b = -wi.x*wi.y*a;
         wk = vec3(1.0f-wi.x*wi.x*a, b, -wi.x);
         wj = vec3(b, 1.0f-wi.y*wi.y*a, -wi.y);
     }
+    wk = normalize(wk);
+    wj = normalize(wj);
     // project S in this basis
     float S_kk = wk.x*wk.x*sggx.S_xx+wk.y*wk.y*sggx.S_yy+wk.z*wk.z*sggx.S_zz+2.0f*(wk.x*wk.y*sggx.S_xy+wk.x*wk.z*sggx.S_xz+wk.y*wk.z*sggx.S_yz);
     float S_jj = wj.x*wj.x*sggx.S_xx+wj.y*wj.y*sggx.S_yy+wj.z*wj.z*sggx.S_zz+2.0f*(wj.x*wj.y*sggx.S_xy+wj.x*wj.z*sggx.S_xz+wj.y*wj.z*sggx.S_yz);
@@ -103,12 +110,13 @@ vec3 sampleVNDF(const vec3 wi, SGGX sggx, float u1, float u2) {
         +(wj.x*wi.y+wj.y*wi.x)*sggx.S_xy+(wj.x*wi.z+wj.z*wi.x)*sggx.S_xz+(wj.y*wi.z+wj.z*wi.y)*sggx.S_yz;
     // compute normal
     float sqrtDetSkji = sqrt(abs(S_kk*S_jj*S_ii-S_kj*S_kj*S_ii-S_ki*S_ki*S_jj-S_ji*S_ji*S_kk+2.0f*S_kj*S_ki*S_ji));
-    float inv_sqrtS_ii = 1.0f/sqrt(S_ii);
-    float tmp = sqrt(S_jj*S_ii-S_ji*S_ji);
+    float inv_sqrtS_ii = 1.0f/sqrt(max(S_ii, EPS));
+    float tmp = sqrt(max(S_jj*S_ii-S_ji*S_ji, EPS));
     vec3 Mk = vec3(sqrtDetSkji/tmp, 0.0f, 0.0f);
     vec3 Mj = vec3(-inv_sqrtS_ii*(S_ki*S_ji-S_kj*S_ii)/tmp, inv_sqrtS_ii*tmp, 0);
     vec3 Mi = vec3(inv_sqrtS_ii*S_ki, inv_sqrtS_ii*S_ji, inv_sqrtS_ii*S_ii);
     vec3 wm_kji = normalize(u*Mk+v*Mj+w*Mi);
+
     // rotate back to world basis
     return wm_kji.x*wk+wm_kji.y*wj+wm_kji.z*wi;
 }
@@ -134,11 +142,12 @@ vec3 df(float q[10], vec3 p) {
         );
 }
 
-float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
-    // sample VNDF
-    vec3 wm = sampleVNDF(wi, sggx, random(), random());
-    // eval diffuse
-    return 1.0f/M_PI*max(0.0f, dot(wo, wm));
+float D(vec3 wm, SGGX sggx) {
+    float detS = sggx.S_xx*sggx.S_yy*sggx.S_zz-sggx.S_xx*sggx.S_yz*sggx.S_yz-sggx.S_yy*sggx.S_xz*sggx.S_xz-sggx.S_zz*sggx.S_xy*sggx.S_xy+2.0f*sggx.S_xy*sggx.S_xz*sggx.S_yz;
+    float den = wm.x*wm.x*(sggx.S_yy*sggx.S_zz-sggx.S_yz*sggx.S_yz)+wm.y*wm.y*(sggx.S_xx*sggx.S_zz-sggx.S_xz*sggx.S_xz)+wm.z*wm.z*(sggx.S_xx*sggx.S_yy-sggx.S_xy*sggx.S_xy)
+        +2.0f*(wm.x*wm.y*(sggx.S_xz*sggx.S_yz-sggx.S_zz*sggx.S_xy)+wm.x*wm.z*(sggx.S_xy*sggx.S_yz-sggx.S_yy*sggx.S_xz)+wm.y*wm.z*(sggx.S_xy*sggx.S_xz-sggx.S_xx*sggx.S_yz));
+    float D = pow(abs(detS), 1.5f)/(M_PI*den*den);
+    return D;
 }
 
 float sigmaWi(vec3 wi, SGGX sggx) {
@@ -146,12 +155,23 @@ float sigmaWi(vec3 wi, SGGX sggx) {
     return (sqrSigma > 0.f) ? sqrt(sqrSigma) : 0.f;
 }
 
-float D(vec3 wm, SGGX sggx) {
-    float detS = sggx.S_xx*sggx.S_yy*sggx.S_zz-sggx.S_xx*sggx.S_yz*sggx.S_yz-sggx.S_yy*sggx.S_xz*sggx.S_xz-sggx.S_zz*sggx.S_xy*sggx.S_xy+2.0f*sggx.S_xy*sggx.S_xz*sggx.S_yz;
-    float den = wm.x*wm.x*(sggx.S_yy*sggx.S_zz-sggx.S_yz*sggx.S_yz)+wm.y*wm.y*(sggx.S_xx*sggx.S_zz-sggx.S_xz*sggx.S_xz)+wm.z*wm.z*(sggx.S_xx*sggx.S_yy-sggx.S_xy*sggx.S_xy)
-        +2.0f*(wm.x*wm.y*(sggx.S_xz*sggx.S_yz-sggx.S_zz*sggx.S_xy)+wm.x*wm.z*(sggx.S_xy*sggx.S_yz-sggx.S_yy*sggx.S_xz)+wm.y*wm.z*(sggx.S_xy*sggx.S_xz-sggx.S_xx*sggx.S_yz));
-    float D = pow(abs(detS), 1.5f)/(M_PI*den*den);
-    return D;
+float evalSpecular(SGGX sggx, vec3 wi, vec3 wo) {
+    vec3 wh = normalize(wi+wo);
+    //return 10.0f*sigmaWi(wi, sggx);
+    return 0.25*D(wh, sggx)/sigmaWi(wi, sggx);
+}
+
+float evalDiffuse(SGGX sggx, vec3 wi, vec3 wo) {
+    // sample VNDF
+    vec3 wm = sampleVNDF(wi, sggx, random(), random());
+    // eval diffuse
+    return 1.0f/M_PI*max(0.0f, dot(wo, wm));
+}
+
+float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
+    //return evalSpecular(sggx, wo, wi);
+    //return evalDiffuse(sggx, wo, wi);
+    return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
 }
 
 float density(float q[10], vec3 p, float sigma) {
@@ -214,6 +234,7 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     //     +voxel.hullQ[6]*r.d.x+voxel.hullQ[7]*r.d.y+voxel.hullQ[8]*r.d.z;
     // float c = f(voxel.hullQ, r.o);
     float sigma = voxel.sigma;
+    //float sigma = 0.00001f;
     IntersectResult res;
     float upSol = getMinimumQuadraticSolution(r, a, b, c-3.f*sigma, tMin, tMax, bmin, bmax);
     float downSol = getMinimumQuadraticSolution(r, a, b, c+3.f*sigma, tMin, tMax, bmin, bmax);
@@ -245,11 +266,6 @@ IntersectResult intersect(Ray r, float tMax) {
     return res;
 }
 
-vec3 lightPos = vec3(0.f, 1.f, 0.f);
-vec3 lightI = vec3(100.f);
-//vec3 ambientL = vec3(.5f, .7f, 1.f);
-vec3 ambientL = vec3(0.f);
-
 vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase) {
     vec3 wi = lightPos-intr;
     float sqrDist  = dot(wi, wi);
@@ -258,6 +274,8 @@ vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase) {
     float p_l = 1.f;
     float scatterPdf = phasePdf(phase, wo, wi);
     vec3 f_hat = vec3(scatterPdf);
+
+    //return f_hat;
 
     vec3 T_ray = vec3(1.f);
     vec3 r_l = vec3(1.f);
@@ -282,7 +300,7 @@ vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase) {
 
                 SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
                 float sigma_wi = sigmaWi(-wi, sggx);
-                vec3 sigma_maj = vec3(sigma_wi/GaussianDistrubtion(0, 0, voxel.sigma));
+                vec3 sigma_maj = vec3(sigma_wi/(GaussianDistrubtion(0, 0, voxel.sigma)));
                 vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
                 
                 vec3 T_maj = vec3(1.f);
@@ -354,6 +372,7 @@ vec3 LiVoxel(Ray r, int idx) {
     float tMax = intersectVoxel(r, idx, EPS, MAX_DIST).t;
     if (tMax >= MAX_DIST)
         tMax = 0.f;
+    //return vec3(1.f);
     //return vec3(tMax);
     vec3 T_maj = vec3(1.f);
     VoxelData voxel = voxels[idx];
@@ -363,10 +382,14 @@ vec3 LiVoxel(Ray r, int idx) {
 
     SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
     float sigma_wi = sigmaWi(-r.d, sggx);
-    vec3 sigma_maj = vec3(sigma_wi/GaussianDistrubtion(0, 0, voxel.sigma));
+    vec3 sigma_maj = vec3(sigma_wi/(GaussianDistrubtion(0, 0, voxel.sigma)));
     vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
 
-    //return vec3(sggx.S_yy, sggx.S_yz, sggx.S_zz);
+
+    //vec3 wi = normalize(lightPos-r.o);
+    //return vec3(D(-r.d, sggx));
+
+    //return sampleLd(r.o, -r.d, beta, r_u, sggx);
 
     if (sigma_maj[0] == 0) {
         T_maj *= exp(-tMax*sigma_maj);
@@ -394,12 +417,10 @@ vec3 LiVoxel(Ray r, int idx) {
                 int mode = sampleEvent(random(), pAbsorb, pScatter, pNull);
                 if (mode == 0) {
                     return vec3(0.f);
-                    //return vec3(0.f, 1.f, 0.f);
                 } else if (mode == 1) {
                     float pdf = T_maj[0]*sigma_s[0];
                     beta *= T_maj*sigma_s/pdf;
                     r_u *= T_maj*sigma_s/pdf;
-                    //return vec3(1.f);
                     return sampleLd(p, -r.d, beta, r_u, sggx);
                 } else {
                     vec3 sigma_n = max(sigma_maj-sigma_a-sigma_s, vec3(0.f));
@@ -419,7 +440,6 @@ vec3 LiVoxel(Ray r, int idx) {
             } else {
                 float dt = tMax-tMin;
                 T_maj *= exp(-dt*sigma_maj);
-                //return vec3(1.f, 0.f, 0.f);
                 break;
             }
         }
@@ -427,7 +447,6 @@ vec3 LiVoxel(Ray r, int idx) {
     beta *= T_maj/T_maj[0];
     r_u *= T_maj/T_maj[0];
     r_l *= T_maj/T_maj[0];
-    
     return beta*ambientL/average(r_u);
 }
 

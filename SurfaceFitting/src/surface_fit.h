@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <Eigen/Dense>
+#include <vector>
 using namespace glm;
 using namespace Eigen;
 
@@ -61,6 +62,7 @@ struct QuadricFit {
 	float weightSum;
 	float normalWeightSum;
 	int vertices;
+	std::vector<std::pair<float, vec3>> normals;
 
 	QuadricFit() {
 		M = MatrixXf::Zero(10, 10);
@@ -70,11 +72,20 @@ struct QuadricFit {
 		weightSum = 0.f;
 		normalWeightSum = 0;
 		vertices = 0;
+		normals.clear();
 	}
 
 	void addPoint(const vec3& p, float w);
 
 	void addTriangle(const vec3 tri[3]);
+
+	float getTaubinErr(const VectorXf& c) const {
+		float mSum = c.transpose() * M * c;
+		float nSum = c.transpose() * N * c;
+		return mSum / nSum;
+	}
+
+	bool lineSearch(VectorXf c1, VectorXf c2, float& t) const;
 
 	Quadric fitQuadric() const;
 

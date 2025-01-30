@@ -22,7 +22,7 @@ VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
 
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
-    float scale = 5.0f;
+    float scale = 2.0f;
     vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
 
     for (size_t s = 0; s < shapes.size(); ++s) {

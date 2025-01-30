@@ -82,11 +82,11 @@
     <None Include="shader\raytrace.fs">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="shader\raytrace.vs">
-      <Filter>资源文件</Filter>
-    </None>
     <None Include="shader\raytrace.comp">
       <Filter>资源文件</Filter>
+    </None>
+    <None Include="shader\raytrace.vs">
+      <Filter>源文件</Filter>
     </None>
   </ItemGroup>
 </Project>
