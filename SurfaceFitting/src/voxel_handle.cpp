@@ -1,13 +1,26 @@
+#define TINYOBJLOADER_IMPLEMENTATION
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+
 #include "voxel_handle.h"
 #include <iostream>
 #include <GLFW/glfw3.h>
-#define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
+#include "tiny_gltf.h"
 #include "triangle_clip.h"
 
 VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
     voxels = vector<vector<vector<Voxel>>>(slice[0], vector<vector<Voxel>>(slice[1], vector<Voxel>(slice[2])));
+    string objSuffix = ".obj";
+    if (!meshFile.compare(meshFile.size() - objSuffix.size(), objSuffix.size(), objSuffix)) {
+        loadFromObj(meshFile);
+    } else {
+        loadFromGltf(meshFile);
+    }
+}
 
+void VoxelLayer::loadFromObj(string meshFile) {
     tinyobj::ObjReaderConfig readerConfig;
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(meshFile, readerConfig)) {
@@ -115,4 +128,29 @@ VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
     }
     double endTime = glfwGetTime();
     cout << (endTime - startTime) * 1000 << "ms" << endl;
+}
+
+void VoxelLayer::loadFromGltf(string meshFile) {
+    tinygltf::Model model;
+    tinygltf::TinyGLTF loader;
+    string err, warn;
+
+    string ext = tinygltf::GetFilePathExtension(meshFile);
+    bool ret = false;
+    if (ext.compare("glb") == 0)
+        ret = loader.LoadBinaryFromFile(&model, &err, &warn, meshFile);
+    else
+        ret = loader.LoadASCIIFromFile(&model, &err, &warn, meshFile);
+    if (!warn.empty()) {
+        cout << "TinyGLTF: " << warn << endl;
+    }
+    if (!err.empty()) {
+        cerr << "TinyGLTF: " << err << endl;
+        exit(1);
+    }
+    if (!ret) {
+        cout << "Failed to parse glTF" << endl;
+        exit(1);
+    }
+
 }

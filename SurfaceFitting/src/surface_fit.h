@@ -56,36 +56,36 @@ struct SGGX {
 
 struct QuadricFit {
 
-	MatrixXf M, N;
-	Matrix3f SigmaNormal;
-	vec3 normalSum;
-	float weightSum;
-	float normalWeightSum;
+	MatrixXd M, N;
+	Matrix3d SigmaNormal;
+	dvec3 normalSum;
+	double weightSum;
+	double normalWeightSum;
 	int vertices;
-	std::vector<std::pair<float, vec3>> normals;
+	std::vector<std::pair<double, vec3>> normals;
 
 	QuadricFit() {
-		M = MatrixXf::Zero(10, 10);
-		N = MatrixXf::Zero(10, 10);
-		SigmaNormal = Matrix3f::Zero();
-		normalSum = vec3(0.f);
+		M = MatrixXd::Zero(10, 10);
+		N = MatrixXd::Zero(10, 10);
+		SigmaNormal = Matrix3d::Zero();
+		normalSum = dvec3(0.f);
 		weightSum = 0.f;
 		normalWeightSum = 0;
 		vertices = 0;
 		normals.clear();
 	}
 
-	void addPoint(const vec3& p, float w);
+	void addPoint(const dvec3& p, double w);
 
 	void addTriangle(const vec3 tri[3]);
 
-	float getTaubinErr(const VectorXf& c) const {
-		float mSum = c.transpose() * M * c;
-		float nSum = c.transpose() * N * c;
+	double getTaubinErr(const VectorXd& c) const {
+		double mSum = c.transpose() * M * c;
+		double nSum = c.transpose() * N * c;
 		return mSum / nSum;
 	}
 
-	bool lineSearch(VectorXf c1, VectorXf c2, float& t) const;
+	bool lineSearch(VectorXd c1, VectorXd c2, double& t) const;
 
 	Quadric fitQuadric() const;
 

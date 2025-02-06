@@ -31,6 +31,7 @@ uniform int currentSample;
 struct Ray {
     vec3 o;
     vec3 d;
+    int medium;
 };
 
 struct IntersectResult {
@@ -170,8 +171,8 @@ float evalDiffuse(SGGX sggx, vec3 wi, vec3 wo) {
 
 float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
     //return evalSpecular(sggx, wo, wi);
-    //return evalDiffuse(sggx, wo, wi);
-    return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
+    return evalDiffuse(sggx, wo, wi);
+    //return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
 }
 
 float density(float q[10], vec3 p, float sigma) {
@@ -266,7 +267,7 @@ IntersectResult intersect(Ray r, float tMax) {
     return res;
 }
 
-vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase) {
+vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase, int medium) {
     vec3 wi = lightPos-intr;
     float sqrDist  = dot(wi, wi);
     wi = normalize(wi);
@@ -280,84 +281,86 @@ vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase) {
     vec3 T_ray = vec3(1.f);
     vec3 r_l = vec3(1.f);
     vec3 r_u = vec3(1.f);
-    Ray lightRay = {intr, wi};
+    Ray lightRay = {intr, wi, medium};
     IntersectResult intrRes;
     intrRes.t = MAX_DIST;
     while (intrRes.t > EPS) {
         float dist = length(lightPos-lightRay.o);
         intrRes = intersect(lightRay, dist);
-        if (intrRes.idx >= 0) {
+        if (lightRay.medium >= 0) {
+            // In medium
             VoxelData voxel = voxels[intrRes.idx];
-            float func = f(voxel.q, lightRay.o+lightRay.d*intrRes.t*0.5f);
-            if (-3.f*voxel.sigma <= func && func <= 3.f*voxel.sigma) {
-                // In medium
-                float tMax = intrRes.t;
-                if (intrRes.t >= MAX_DIST)
-                    tMax = dist;
-                // vec3 sigma_A = vec3(voxel.sigma_a[0], voxel.sigma_a[1], voxel.sigma_a[2]);
-                // vec3 sigma_S = vec3(voxel.sigma_s[0], voxel.sigma_s[1], voxel.sigma_s[2]);
-                // vec3 sigma_maj = sigma_A+sigma_S;
+            float tMax = intrRes.t;
+            if (intrRes.t >= MAX_DIST)
+                tMax = dist;
+            // vec3 sigma_A = vec3(voxel.sigma_a[0], voxel.sigma_a[1], voxel.sigma_a[2]);
+            // vec3 sigma_S = vec3(voxel.sigma_s[0], voxel.sigma_s[1], voxel.sigma_s[2]);
+            // vec3 sigma_maj = sigma_A+sigma_S;
 
-                SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
-                float sigma_wi = sigmaWi(-wi, sggx);
-                vec3 sigma_maj = vec3(sigma_wi/(GaussianDistrubtion(0, 0, voxel.sigma)));
-                vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
-                
-                vec3 T_maj = vec3(1.f);
-                if (sigma_maj[0] == 0) {
-                    T_maj *= exp(-tMax*sigma_maj);
-                } else {
-                    float tMin = 0;
-                    while (true) {
-                        float t = tMin+sampleExponential(random(), sigma_maj[0]);
-                        if (t < tMax) {
-                            T_maj *= exp(-(t-tMin)*sigma_maj);
+            SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
+            float sigma_wi = sigmaWi(-wi, sggx);
+            vec3 sigma_maj = vec3(sigma_wi/(GaussianDistrubtion(0, 0, voxel.sigma)));
+            vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
+            
+            vec3 T_maj = vec3(1.f);
+            if (sigma_maj[0] == 0) {
+                T_maj *= exp(-tMax*sigma_maj);
+            } else {
+                float tMin = 0;
+                while (true) {
+                    float t = tMin+sampleExponential(random(), sigma_maj[0]);
+                    if (t < tMax) {
+                        T_maj *= exp(-(t-tMin)*sigma_maj);
 
-                            vec3 p = lightRay.o+lightRay.d*t;
-                            // vec3 sigma_a = sigma_A*getSigmaAttenuation(voxel.q, p, voxel.sigma);
-                            // vec3 sigma_s = sigma_S*getSigmaAttenuation(voxel.q, p, voxel.sigma);
-                            vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma));
-                            vec3 sigma_s = albedo*sigma_t;
-                            vec3 sigma_a = sigma_t-sigma_s;
+                        vec3 p = lightRay.o+lightRay.d*t;
+                        // vec3 sigma_a = sigma_A*getSigmaAttenuation(voxel.q, p, voxel.sigma);
+                        // vec3 sigma_s = sigma_S*getSigmaAttenuation(voxel.q, p, voxel.sigma);
+                        vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma));
+                        vec3 sigma_s = albedo*sigma_t;
+                        vec3 sigma_a = sigma_t-sigma_s;
 
-                            vec3 sigma_n = sigma_maj-sigma_a-sigma_s;
-                            if (sigma_n.x < 0.f || sigma_n.y < 0.f || sigma_n.z < 0.f)
-                                return vec3(1.f, 0.f, 0.f);
-                            float pdf = T_maj[0]*sigma_maj[0];
-                            T_ray *= T_maj*sigma_n/pdf;
-                            r_l *= T_maj*sigma_maj/pdf;
-                            r_u *= T_maj*sigma_n/pdf;
+                        vec3 sigma_n = sigma_maj-sigma_a-sigma_s;
+                        if (sigma_n.x < 0.f || sigma_n.y < 0.f || sigma_n.z < 0.f)
+                            return vec3(1.f, 0.f, 0.f);
+                        float pdf = T_maj[0]*sigma_maj[0];
+                        T_ray *= T_maj*sigma_n/pdf;
+                        r_l *= T_maj*sigma_maj/pdf;
+                        r_u *= T_maj*sigma_n/pdf;
 
-                            vec3 Tr = T_ray/average(r_l+r_u);
-                            if (max(Tr[0], max(Tr[1], Tr[2])) < 0.05f) {
-                                float q = 0.75f;
-                                if (random() < q)
-                                    T_ray = vec3(0.f);
-                                else
-                                    T_ray /= 1-q;
-                            }
-                            if (T_ray == vec3(0.f)) {
-                                return vec3(0.f);
-                            }
-
-                            T_maj = vec3(1.f);
-                            tMin = t;
-                        } else {
-                            float dt = tMax-tMin;
-                            T_maj *= exp(-dt*sigma_maj);
-                            break;
+                        vec3 Tr = T_ray/average(r_l+r_u);
+                        if (max(Tr[0], max(Tr[1], Tr[2])) < 0.05f) {
+                            float q = 0.75f;
+                            if (random() < q)
+                                T_ray = vec3(0.f);
+                            else
+                                T_ray /= 1-q;
                         }
+                        if (T_ray == vec3(0.f)) {
+                            return vec3(0.f);
+                        }
+
+                        T_maj = vec3(1.f);
+                        tMin = t;
+                    } else {
+                        float dt = tMax-tMin;
+                        T_maj *= exp(-dt*sigma_maj);
+                        break;
                     }
                 }
-                T_ray *= T_maj/T_maj[0];
-                r_l *= T_maj/T_maj[0];
-                r_u *= T_maj/T_maj[0];
             }
+            T_ray *= T_maj/T_maj[0];
+            r_l *= T_maj/T_maj[0];
+            r_u *= T_maj/T_maj[0];
         }
         if (intrRes.t >= MAX_DIST)
             break;
         lightRay.o = intrRes.intersection;
         lightRay.d = wi;
+        if (lightRay.medium != intrRes.idx) {
+            lightRay.medium = intrRes.idx;
+        } else {
+            lightRay.medium = -1;
+        }
     }
     r_l *= r_p*p_l;
     r_u *= r_p*scatterPdf;
@@ -421,7 +424,7 @@ vec3 LiVoxel(Ray r, int idx) {
                     float pdf = T_maj[0]*sigma_s[0];
                     beta *= T_maj*sigma_s/pdf;
                     r_u *= T_maj*sigma_s/pdf;
-                    return sampleLd(p, -r.d, beta, r_u, sggx);
+                    return sampleLd(p, -r.d, beta, r_u, sggx, r.medium);
                 } else {
                     vec3 sigma_n = max(sigma_maj-sigma_a-sigma_s, vec3(0.f));
                     float pdf = T_maj[0]*sigma_n[0];
@@ -462,14 +465,117 @@ vec3 shadeVoxel(IntersectResult intr) {
 
 
 vec3 Li(Ray r) {
+    // vec3 L = vec3(0.f);
+    // IntersectResult intr = intersect(r, MAX_DIST);
+    // if (intr.t < MAX_DIST) {
+    //     Ray voxelRay = {intr.intersection, r.d};
+    //     //L += shadeVoxel(intr);
+    //     L += LiVoxel(voxelRay, intr.idx);
+    // } else {
+    //     L += ambientL;
+    // }
+    // return L;
+    int maxDepth = 1;
     vec3 L = vec3(0.f);
-    IntersectResult intr = intersect(r, MAX_DIST);
-    if (intr.t < MAX_DIST) {
-        Ray voxelRay = {intr.intersection, r.d};
-        //L += shadeVoxel(intr);
-        L += LiVoxel(voxelRay, intr.idx);
-    } else {
-        L += ambientL;
+    vec3 beta = vec3(1.f);
+    vec3 r_u = vec3(1.f);
+    vec3 r_l = vec3(1.f);
+    int depth = 0;
+    int loopCnt = 0;
+    while (true) {
+        IntersectResult intr = intersect(r, MAX_DIST);
+        if (r.medium >= 0) {
+            // In medium
+            VoxelData voxel = voxels[intr.idx];
+            
+            float tMax = intr.t;
+            if (tMax >= MAX_DIST)
+                tMax = 0.f;
+            return vec3(tMax);
+
+            SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
+            float sigma_wi = sigmaWi(-r.d, sggx);
+            vec3 sigma_maj = vec3(sigma_wi/(GaussianDistrubtion(0, 0, voxel.sigma)));
+            vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
+            vec3 T_maj = vec3(1.f);
+            bool scattered = false, terminated = false;
+            if (sigma_maj[0] == 0) {
+                T_maj *= exp(-tMax*sigma_maj);
+            } else {
+                float tMin = 0;
+                while (true) {
+                    float t = tMin+sampleExponential(random(), sigma_maj[0]);
+                    if (t < tMax) {
+                        T_maj *= exp(-(t-tMin)*sigma_maj);
+                        if (beta == vec3(0.f)) {
+                            return vec3(0.f);
+                        }
+
+                        vec3 p = r.o+r.d*t;
+                        // vec3 sigma_a = sigma_A*getSigmaAttenuation(voxel.q, p, voxel.sigma);
+                        // vec3 sigma_s = sigma_S*getSigmaAttenuation(voxel.q, p, voxel.sigma);
+
+                        vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma));
+                        vec3 sigma_s = albedo*sigma_t;
+                        vec3 sigma_a = sigma_t-sigma_s;
+
+                        float pAbsorb = sigma_a[0]/sigma_maj[0];
+                        float pScatter = sigma_s[0]/sigma_maj[0];
+                        float pNull = max(0.f, 1.f-pAbsorb-pScatter);
+                        int mode = sampleEvent(random(), pAbsorb, pScatter, pNull);
+                        if (mode == 0) {
+                            return L;
+                        } else if (mode == 1) {
+                            if (depth >= maxDepth) {
+                                return L;
+                            }
+                            depth++;
+                            float pdf = T_maj[0]*sigma_s[0];
+                            beta *= T_maj*sigma_s/pdf;
+                            r_u *= T_maj*sigma_s/pdf;
+                            L += sampleLd(p, -r.d, beta, r_u, sggx, r.medium);
+                            break;
+                        } else {
+                            vec3 sigma_n = max(sigma_maj-sigma_a-sigma_s, vec3(0.f));
+                            float pdf = T_maj[0]*sigma_n[0];
+                            beta *= T_maj*sigma_n/pdf;
+                            if (pdf == 0)
+                                beta = vec3(0.f);
+                            r_u *= T_maj*sigma_n/pdf;
+                            r_l *= T_maj*sigma_maj/pdf;
+                            if (beta == vec3(0.f) || r_u == vec3(0.f)) {
+                                break;
+                            }
+                        }
+
+                        T_maj = vec3(1.f);
+                        tMin = t;
+                    } else {
+                        float dt = tMax-tMin;
+                        T_maj *= exp(-dt*sigma_maj);
+                        break;
+                    }
+                }
+            }
+            beta *= T_maj/T_maj[0];
+            r_u *= T_maj/T_maj[0];
+            r_l *= T_maj/T_maj[0];
+        }
+        if (intr.t >= MAX_DIST) {
+            if (depth == 0) {
+                L += beta*ambientL/average(r_u);
+            } else {
+                L += beta*ambientL/average(r_u+r_l);
+            }
+            break;
+        }
+        r.o = intr.intersection;
+        if (r.medium != intr.idx) {
+            r.medium = intr.idx;
+        } else {
+            r.medium = -1;
+        }
+        loopCnt++;
     }
     return L;
 }
@@ -479,7 +585,7 @@ void main() {
     vec2 uv = (gl_GlobalInvocationID.xy+vec2(random(), random()))/imgSize*2.f-1.f;
     vec4 ndcRayDir = vec4(uv, 1.f, 1.f);
     vec4 worldRayDir = viewInv*projectionInv*ndcRayDir;
-    Ray r = {cameraPos, worldRayDir.xyz/worldRayDir.w};
+    Ray r = {cameraPos, worldRayDir.xyz/worldRayDir.w, -1};
     r.d = normalize(r.d);
     // IntersectResult intr = intersect(r);
     // if (intr.t < MAX_DIST) {
@@ -490,7 +596,7 @@ void main() {
     //     color = vec3(.5f, .7f, 1);
     vec3 color = imageLoad(imgOutput, ivec2(gl_GlobalInvocationID.xy)).rgb;
     color *= (currentSample-1.f)/currentSample;
-    //color = Li(r);
-    color += Li(r)/currentSample;
+    color = Li(r);
+    //color += Li(r)/currentSample;
     imageStore(imgOutput, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.f));
 }

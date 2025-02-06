@@ -164,12 +164,16 @@
   <ItemGroup>
     <ClInclude Include="src\camera.h" />
     <ClInclude Include="src\ellipsoidhull.h" />
+    <ClInclude Include="src\json.hpp" />
     <ClInclude Include="src\mesh.h" />
     <ClInclude Include="src\quadricfitting.h" />
     <ClInclude Include="src\roots3and4.h" />
     <ClInclude Include="src\shader_c.h" />
     <ClInclude Include="src\shader_m.h" />
+    <ClInclude Include="src\stb_image.h" />
+    <ClInclude Include="src\stb_image_write.h" />
     <ClInclude Include="src\surface_fit.h" />
+    <ClInclude Include="src\tiny_gltf.h" />
     <ClInclude Include="src\tiny_obj_loader.h" />
     <ClInclude Include="src\triangle_clip.h" />
     <ClInclude Include="src\voxel_handle.h" />

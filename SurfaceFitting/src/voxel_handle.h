@@ -17,4 +17,8 @@ struct VoxelLayer {
 
     VoxelLayer(string meshFile, ivec3 slice);
 
+    void loadFromObj(string meshFile);
+
+    void loadFromGltf(string meshFile);
+
 };
