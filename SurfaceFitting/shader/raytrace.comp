@@ -2,7 +2,7 @@
 #define MAX_DIST 100
 #define M_PI 3.14159265358979323846
 #define INV4PI 0.07957747154594766788
-#define EPS 1e-5
+#define EPS 1e-4
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
@@ -64,6 +64,10 @@ float stepAndOutputRNGFloat(inout uint rngState) {
 }
 
 uint rngState =  800*600*currentSample+600*gl_GlobalInvocationID.x+gl_GlobalInvocationID.y;
+//uint rngState = 600*gl_GlobalInvocationID.x+gl_GlobalInvocationID.y;
+
+int loopCnt = 0;
+int rayMedium = -1;
 
 float random() {
     return stepAndOutputRNGFloat(rngState);
@@ -181,6 +185,10 @@ float density(float q[10], vec3 p, float sigma) {
     //return 1.f;
 }
 
+bool inBox(vec3 p, vec3 bmin, vec3 bmax) {
+    return min(p, bmin) == bmin && max(p, bmax) == bmax;
+}
+
 float getMinimumQuadraticSolution(Ray r, float a, float b, float c, float tMin, float tMax, vec3 bmin, vec3 bmax) {
     float delta = b*b-4*a*c, t = MAX_DIST;
     if (delta >= 0) {
@@ -188,14 +196,14 @@ float getMinimumQuadraticSolution(Ray r, float a, float b, float c, float tMin, 
         float temp = (-b-sqrtDelta)/(2*a);
         if (tMin < temp && temp < tMax) {
             vec3 p = r.o+temp*r.d;
-            if (min(p, bmin) == bmin && max(p, bmax) == bmax) {
+            if (inBox(p, bmin, bmax)) {
                 t = min(t, temp);
             }
         }
         temp = (-b+sqrtDelta)/(2*a);
         if (tMin < temp && temp < tMax) {
             vec3 p = r.o+temp*r.d;
-            if (min(p, bmin) == bmin && max(p, bmax) == bmax) {
+            if (inBox(p, bmin, bmax)) {
                 t = min(t, temp);
             }
         }
@@ -237,6 +245,7 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     float sigma = voxel.sigma;
     //float sigma = 0.00001f;
     IntersectResult res;
+    res.idx = -1;
     float upSol = getMinimumQuadraticSolution(r, a, b, c-3.f*sigma, tMin, tMax, bmin, bmax);
     float downSol = getMinimumQuadraticSolution(r, a, b, c+3.f*sigma, tMin, tMax, bmin, bmax);
     float aabb = intersectAABB(r, bmin, bmax, tMin, tMax);
@@ -286,9 +295,9 @@ vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase, int medium) {
     intrRes.t = MAX_DIST;
     while (intrRes.t > EPS) {
         float dist = length(lightPos-lightRay.o);
-        intrRes = intersect(lightRay, dist);
         if (lightRay.medium >= 0) {
             // In medium
+            intrRes = intersectVoxel(lightRay, lightRay.medium, EPS, dist);
             VoxelData voxel = voxels[intrRes.idx];
             float tMax = intrRes.t;
             if (intrRes.t >= MAX_DIST)
@@ -351,6 +360,8 @@ vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase, int medium) {
             T_ray *= T_maj/T_maj[0];
             r_l *= T_maj/T_maj[0];
             r_u *= T_maj/T_maj[0];
+        } else {
+            intrRes = intersect(lightRay, dist);
         }
         if (intrRes.t >= MAX_DIST)
             break;
@@ -367,92 +378,6 @@ vec3 sampleLd(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase, int medium) {
     return beta*f_hat*T_ray*L/average(r_l);
 }
 
-vec3 LiVoxel(Ray r, int idx) {
-    bool scattered = false, terminated = false;
-    vec3 beta = vec3(1.f);
-    vec3 r_u = vec3(1.f);
-    vec3 r_l = vec3(1.f);
-    float tMax = intersectVoxel(r, idx, EPS, MAX_DIST).t;
-    if (tMax >= MAX_DIST)
-        tMax = 0.f;
-    //return vec3(1.f);
-    //return vec3(tMax);
-    vec3 T_maj = vec3(1.f);
-    VoxelData voxel = voxels[idx];
-    // vec3 sigma_A = vec3(voxel.sigma_a[0], voxel.sigma_a[1], voxel.sigma_a[2]);
-    // vec3 sigma_S = vec3(voxel.sigma_s[0], voxel.sigma_s[1], voxel.sigma_s[2]);
-    // vec3 sigma_maj = sigma_A+sigma_S;
-
-    SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
-    float sigma_wi = sigmaWi(-r.d, sggx);
-    vec3 sigma_maj = vec3(sigma_wi/(GaussianDistrubtion(0, 0, voxel.sigma)));
-    vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
-
-
-    //vec3 wi = normalize(lightPos-r.o);
-    //return vec3(D(-r.d, sggx));
-
-    //return sampleLd(r.o, -r.d, beta, r_u, sggx);
-
-    if (sigma_maj[0] == 0) {
-        T_maj *= exp(-tMax*sigma_maj);
-    } else {
-        float tMin = 0;
-        while (true) {
-            float t = tMin+sampleExponential(random(), sigma_maj[0]);
-            if (t < tMax) {
-                T_maj *= exp(-(t-tMin)*sigma_maj);
-                if (beta == vec3(0.f)) {
-                    return vec3(0.f);
-                }
-
-                vec3 p = r.o+r.d*t;
-                // vec3 sigma_a = sigma_A*getSigmaAttenuation(voxel.q, p, voxel.sigma);
-                // vec3 sigma_s = sigma_S*getSigmaAttenuation(voxel.q, p, voxel.sigma);
-
-                vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma));
-                vec3 sigma_s = albedo*sigma_t;
-                vec3 sigma_a = sigma_t-sigma_s;
-
-                float pAbsorb = sigma_a[0]/sigma_maj[0];
-                float pScatter = sigma_s[0]/sigma_maj[0];
-                float pNull = max(0.f, 1.f-pAbsorb-pScatter);
-                int mode = sampleEvent(random(), pAbsorb, pScatter, pNull);
-                if (mode == 0) {
-                    return vec3(0.f);
-                } else if (mode == 1) {
-                    float pdf = T_maj[0]*sigma_s[0];
-                    beta *= T_maj*sigma_s/pdf;
-                    r_u *= T_maj*sigma_s/pdf;
-                    return sampleLd(p, -r.d, beta, r_u, sggx, r.medium);
-                } else {
-                    vec3 sigma_n = max(sigma_maj-sigma_a-sigma_s, vec3(0.f));
-                    float pdf = T_maj[0]*sigma_n[0];
-                    beta *= T_maj*sigma_n/pdf;
-                    if (pdf == 0)
-                        beta = vec3(0.f);
-                    r_u *= T_maj*sigma_n/pdf;
-                    r_l *= T_maj*sigma_maj/pdf;
-                    if (beta == vec3(0.f) || r_u == vec3(0.f)) {
-                        break;
-                    }
-                }
-
-                T_maj = vec3(1.f);
-                tMin = t;
-            } else {
-                float dt = tMax-tMin;
-                T_maj *= exp(-dt*sigma_maj);
-                break;
-            }
-        }
-    }
-    beta *= T_maj/T_maj[0];
-    r_u *= T_maj/T_maj[0];
-    r_l *= T_maj/T_maj[0];
-    return beta*ambientL/average(r_u);
-}
-
 vec3 shadeVoxel(IntersectResult intr) {
     VoxelData voxel = voxels[intr.idx];
     vec3 N = normalize(df(voxel.q, intr.intersection));
@@ -462,7 +387,6 @@ vec3 shadeVoxel(IntersectResult intr) {
     }
     return N/2.f+.5f;
 }
-
 
 vec3 Li(Ray r) {
     // vec3 L = vec3(0.f);
@@ -481,17 +405,17 @@ vec3 Li(Ray r) {
     vec3 r_u = vec3(1.f);
     vec3 r_l = vec3(1.f);
     int depth = 0;
-    int loopCnt = 0;
     while (true) {
-        IntersectResult intr = intersect(r, MAX_DIST);
+        IntersectResult intr;
         if (r.medium >= 0) {
             // In medium
-            VoxelData voxel = voxels[intr.idx];
-            
+            intr = intersectVoxel(r, r.medium, EPS, MAX_DIST);    
+            VoxelData voxel = voxels[r.medium];
+
             float tMax = intr.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            return vec3(tMax);
+            //return vec3(tMax);
 
             SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
             float sigma_wi = sigmaWi(-r.d, sggx);
@@ -560,6 +484,8 @@ vec3 Li(Ray r) {
             beta *= T_maj/T_maj[0];
             r_u *= T_maj/T_maj[0];
             r_l *= T_maj/T_maj[0];
+        } else {
+            intr = intersect(r, MAX_DIST);
         }
         if (intr.t >= MAX_DIST) {
             if (depth == 0) {
@@ -576,6 +502,7 @@ vec3 Li(Ray r) {
             r.medium = -1;
         }
         loopCnt++;
+        rayMedium = r.medium;
     }
     return L;
 }
@@ -596,7 +523,7 @@ void main() {
     //     color = vec3(.5f, .7f, 1);
     vec3 color = imageLoad(imgOutput, ivec2(gl_GlobalInvocationID.xy)).rgb;
     color *= (currentSample-1.f)/currentSample;
-    color = Li(r);
-    //color += Li(r)/currentSample;
+    //color = Li(r);
+    color += Li(r)/currentSample;
     imageStore(imgOutput, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.f));
 }
