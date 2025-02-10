@@ -54,6 +54,8 @@ struct SGGX {
 
 };
 
+//const int DENSITY_SAMPLES = 4;
+
 struct QuadricFit {
 
 	MatrixXd M, N;
@@ -63,6 +65,9 @@ struct QuadricFit {
 	double normalWeightSum;
 	int vertices;
 	std::vector<std::pair<double, vec3>> normals;
+	//vec3 bmin, bmax;
+	//float areas[DENSITY_SAMPLES][DENSITY_SAMPLES][DENSITY_SAMPLES];
+	//float sa;
 
 	QuadricFit() {
 		M = MatrixXd::Zero(10, 10);
@@ -73,6 +78,9 @@ struct QuadricFit {
 		normalWeightSum = 0;
 		vertices = 0;
 		normals.clear();
+		//bmin = bmax = vec3(0.f);
+		//memset(areas, 0, sizeof(areas));
+		//sa = 0.f;
 	}
 
 	void addPoint(const dvec3& p, double w);
@@ -90,6 +98,8 @@ struct QuadricFit {
 	Quadric fitQuadric() const;
 
 	SGGX fitSGGX() const;
+
+	//float getDensity() const;
 
 };
 

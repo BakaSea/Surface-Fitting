@@ -159,6 +159,7 @@
     <ClCompile Include="src\quadricfitting.cpp" />
     <ClCompile Include="src\roots3and4.cpp" />
     <ClCompile Include="src\surface_fit.cpp" />
+    <ClCompile Include="src\triangle_clip.cpp" />
     <ClCompile Include="src\voxel_handle.cpp" />
   </ItemGroup>
   <ItemGroup>

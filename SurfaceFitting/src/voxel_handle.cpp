@@ -60,8 +60,8 @@ void VoxelLayer::loadFromObj(string meshFile) {
     for (int i = 0; i < slice[0]; ++i) {
         for (int j = 0; j < slice[1]; ++j) {
             for (int k = 0; k < slice[2]; ++k) {
-                voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
-                voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap - vec3(1e-4f);
+                /*voxels[i][j][k].fit.bmin = */voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
+                /*voxels[i][j][k].fit.bmax = */voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap - vec3(1e-4f);
             }
         }
     }
@@ -120,8 +120,10 @@ void VoxelLayer::loadFromObj(string meshFile) {
                     for (int q = 0; q < 10; ++q) {
                         out << ' ' << voxel.quadric.c[q];
                     }
-                    out << voxel.quadric.sigma << endl;
+                    out << ' ' << voxel.quadric.sigma << endl;
                     voxel.sggx = voxel.fit.fitSGGX();
+                    //voxel.density = voxel.fit.getDensity();
+                    //cout << voxel.density << endl;
                 }
             }
         }

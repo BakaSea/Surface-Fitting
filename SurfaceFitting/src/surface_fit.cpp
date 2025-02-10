@@ -1,6 +1,7 @@
 #include "surface_fit.h"
 #include <iostream>
 #include "roots3and4.h"
+#include "triangle_clip.h"
 using namespace std;
 
 void QuadricFit::addPoint(const dvec3& p, double w) {
@@ -41,12 +42,15 @@ void QuadricFit::addTriangle(const vec3 tri[3]) {
 	dvec3 n = cross(e1, e2);
 	double area = length(n) / 2.f;
 	n = normalize(n);
+	// Fitting Quadric
 	for (int i = 0; i < 6; ++i) {
 		dvec3 p = dtri[0] * (1.0 - dunavantX[i] - dunavantY[i]) + dtri[1] * dunavantX[i] + dtri[2] * dunavantY[i];
 		//addPoint(p, 1);
 		addPoint(p, dunavantW[i] * area);
 		//addPoint(p, dunavantW[i]);
 	}
+
+	// Fitting SGGX
 	double prevNormalWeightSum = normalWeightSum;
 	normalWeightSum += area;
 	SigmaNormal *= prevNormalWeightSum / normalWeightSum;
@@ -65,6 +69,27 @@ void QuadricFit::addTriangle(const vec3 tri[3]) {
 	}
 	normalSum += wNormal * n;
 	normals.push_back({ area, n });
+
+	// Density Calculation
+	//sa += area;
+	//vec3 volumeBox = (bmax - bmin) / (1.f * DENSITY_SAMPLES);
+	//for (int i = 0; i < DENSITY_SAMPLES; ++i) {
+	//	for (int j = 0; j < DENSITY_SAMPLES; ++j) {
+	//		for (int k = 0; k < DENSITY_SAMPLES; ++k) {
+	//			vec3 vbmin = bmin + volumeBox * vec3(i, j, k);
+	//			vec3 vbmax = bmin + volumeBox * vec3(i + 1, j + 1, k + 1);
+	//			vector<vec3> points = clipTriangle(tri, vbmin, vbmax);
+	//			if (points.size() >= 3) {
+	//				for (int p = 1; p <= points.size() - 2; ++p) {
+	//					vec3 ce1 = points[p] - points[0], ce2 = points[p + 1] - points[0];
+	//					vec3 cn = cross(ce1, ce2);
+	//					float carea = length(cn) / 2.f;
+	//					areas[i][j][k] += carea;
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
 }
 
 
@@ -274,3 +299,23 @@ SGGX QuadricFit::fitSGGX() const {
 	mat3 S = omegas * diag * transpose(omegas);
 	return SGGX(S);
 }
+
+//float QuadricFit::getDensity() const {
+//	//vec3 volumeBox = (bmax - bmin) / (1.f * DENSITY_SAMPLES);
+//	//float volumeSize = volumeBox.x * volumeBox.y * volumeBox.z;
+//	//float volumeSum = 0.f, areaSum = 0.f;
+//	//for (int i = 0; i < DENSITY_SAMPLES; ++i) {
+//	//	for (int j = 0; j < DENSITY_SAMPLES; ++j) {
+//	//		for (int k = 0; k < DENSITY_SAMPLES; ++k) {
+//	//			if (areas[i][j][k] > FLT_EPSILON) {
+//	//				areaSum += areas[i][j][k];
+//	//				volumeSum += volumeSize;
+//	//			}
+//	//		}
+//	//	}
+//	//}
+//	//return areaSum / volumeSum;
+//	vec3 volumeBox = bmax - bmin;
+//	float volumeSize = volumeBox.x * volumeBox.y * volumeBox.z;
+//	return sa / volumeSize;
+//}

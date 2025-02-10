@@ -8,6 +8,7 @@ struct Voxel {
     Quadric quadric;
     SGGX sggx;
     vec3 bmin, bmax;
+    float density;
 };
 
 struct VoxelLayer {
