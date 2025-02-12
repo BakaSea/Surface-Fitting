@@ -60,27 +60,21 @@ struct QuadricFit {
 
 	MatrixXd M, N;
 	Matrix3d SigmaNormal;
-	dvec3 normalSum;
+	//dvec3 normalSum;
 	double weightSum;
 	double normalWeightSum;
 	int vertices;
 	std::vector<std::pair<double, vec3>> normals;
-	//vec3 bmin, bmax;
-	//float areas[DENSITY_SAMPLES][DENSITY_SAMPLES][DENSITY_SAMPLES];
-	//float sa;
 
 	QuadricFit() {
 		M = MatrixXd::Zero(10, 10);
 		N = MatrixXd::Zero(10, 10);
 		SigmaNormal = Matrix3d::Zero();
-		normalSum = dvec3(0.f);
+		//normalSum = dvec3(0.f);
 		weightSum = 0.f;
 		normalWeightSum = 0;
 		vertices = 0;
 		normals.clear();
-		//bmin = bmax = vec3(0.f);
-		//memset(areas, 0, sizeof(areas));
-		//sa = 0.f;
 	}
 
 	void addPoint(const dvec3& p, double w);
@@ -97,9 +91,9 @@ struct QuadricFit {
 
 	Quadric fitQuadric() const;
 
-	SGGX fitSGGX() const;
+	void addTraingleSGGX(const vec3 tri[3], const Quadric& q);
 
-	//float getDensity() const;
+	SGGX fitSGGX() const;
 
 };
 

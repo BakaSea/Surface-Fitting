@@ -60,6 +60,10 @@ struct DirectSamplingResult {
     float pdf;
 };
 
+struct Frame {
+    vec3 s, t, n;
+};
+
 vec3 lightPos = vec3(1.f, 1.f, 1.f);
 vec3 lightI = vec3(10.f);
 //vec3 ambientL = vec3(.5f, .7f, 1.f);
@@ -196,7 +200,7 @@ float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
     //return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
 }
 
-float densityScale = 10000.f;
+float densityScale = 1000.f;
 
 float getDensityScale(float sigma) {
     //return densityScale;
@@ -207,6 +211,16 @@ float density(float q[10], vec3 p, float sigma) {
     //float d = f(q, p)/length(df(q, p));
     return getDensityScale(sigma)*GaussianDistrubtion(f(q, p), 0, sigma);
     //return 1.f;
+}
+
+Frame coordinateSystem(vec3 v1) {
+    vec3 v2, v3;
+    float s = 1.f;
+    float a = -1.f/(s+v1.z);
+    float b = v1.x*v1.y*a;
+    v2 = vec3(1.f+s*v1.x*v1.x*a, s*b, -s*v1.x);
+    v3 = vec3(b, s+v1.y*v1.y*a, -v1.y);
+    return Frame(v2, v3, v1);
 }
 
 vec3 evalTransmittance(Ray r, float tMax) {
@@ -224,6 +238,12 @@ vec3 evalTransmittance(Ray r, float tMax) {
                 break;
             }
             vec3 p = r.o+t*r.d;
+
+            // vec3 n = normalize(df(voxel.q, p));
+            // Frame f = coordinateSystem(n);
+            // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+            // float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(wi, sggx);
+
             float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(-r.d, sggx);
             if (densityAtT/maxDensity > random())
                 break;
@@ -249,6 +269,12 @@ MediumResult sampleDistance(Ray r, float tMax) {
         if (t >= tMax)
             break;
         vec3 p = r.o+t*r.d;
+
+        // vec3 n = normalize(df(voxel.q, p));
+        // Frame f = coordinateSystem(n);
+        // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+        // float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(wi, mRes.sggx);
+
         float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(-r.d, mRes.sggx);
         if (densityAtT/maxDensity > random()) {
             mRes.p = p;
@@ -630,6 +656,14 @@ vec3 Li(Ray r) {
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
             //return vec3(tMax);
+            // VoxelData voxel = voxels[r.medium];
+            // SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
+            // vec3 n = normalize(df(voxel.q, r.o));
+            // Frame f = coordinateSystem(n);
+            // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+            // //return vec3(sigmaWi(wi, sggx));
+            // return (f.t+1.f)/2.f;
+
             mRes = sampleDistance(r, tMax);
             if (mRes.success) {
                 inMedium = true;
