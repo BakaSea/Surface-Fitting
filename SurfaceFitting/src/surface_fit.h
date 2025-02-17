@@ -60,20 +60,20 @@ struct QuadricFit {
 
 	MatrixXd M, N;
 	Matrix3d SigmaNormal;
-	//dvec3 normalSum;
 	double weightSum;
 	double normalWeightSum;
 	int vertices;
+	double areaSum;
 	std::vector<std::pair<double, vec3>> normals;
 
 	QuadricFit() {
 		M = MatrixXd::Zero(10, 10);
 		N = MatrixXd::Zero(10, 10);
 		SigmaNormal = Matrix3d::Zero();
-		//normalSum = dvec3(0.f);
 		weightSum = 0.f;
 		normalWeightSum = 0;
 		vertices = 0;
+		areaSum = 0;
 		normals.clear();
 	}
 

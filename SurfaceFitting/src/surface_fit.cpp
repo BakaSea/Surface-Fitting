@@ -50,35 +50,36 @@ void QuadricFit::addTriangle(const vec3 tri[3]) {
 		//addPoint(p, dunavantW[i]);
 	}
 	// Fitting SGGX
-	double prevNormalWeightSum = normalWeightSum;
-	normalWeightSum += area;
-	SigmaNormal *= prevNormalWeightSum / normalWeightSum;
-	double wNormal = area / normalWeightSum;
-	if (isnan(area) || isnan(n[0]) || isnan(n[1]) || isnan(n[2])) {
-		cout << tri[0][0] << ' ' << tri[0][1] << ' ' << tri[0][2] << endl;
-		cout << tri[1][0] << ' ' << tri[1][1] << ' ' << tri[1][2] << endl;
-		cout << tri[2][0] << ' ' << tri[2][1] << ' ' << tri[2][2] << endl;
-		cout << endl;
-	}
-	for (int i = 0; i < 3; ++i) {
-		for (int j = 0; j < 3; ++j) {
-			SigmaNormal(i, j) += wNormal * n[i] * n[j];
-		}
-	}
-	normals.push_back({ area, n });
+	//double prevNormalWeightSum = normalWeightSum;
+	//normalWeightSum += area;
+	//SigmaNormal *= prevNormalWeightSum / normalWeightSum;
+	//double wNormal = area / normalWeightSum;
+	//if (isnan(area) || isnan(n[0]) || isnan(n[1]) || isnan(n[2])) {
+	//	cout << tri[0][0] << ' ' << tri[0][1] << ' ' << tri[0][2] << endl;
+	//	cout << tri[1][0] << ' ' << tri[1][1] << ' ' << tri[1][2] << endl;
+	//	cout << tri[2][0] << ' ' << tri[2][1] << ' ' << tri[2][2] << endl;
+	//	cout << endl;
+	//}
+	//for (int i = 0; i < 3; ++i) {
+	//	for (int j = 0; j < 3; ++j) {
+	//		SigmaNormal(i, j) += wNormal * n[i] * n[j];
+	//	}
+	//}
+	//normals.push_back({ area, n });
+
+	areaSum += area;
 }
 
-
 bool isEllipsoid(VectorXd c) {
-	Matrix3f q = Matrix3f::Zero();
+	Matrix3d q = Matrix3d::Zero();
 	q(0, 0) = c(0);
 	q(1, 1) = c(1);
 	q(2, 2) = c(2);
 	q(0, 1) = q(1, 0) = 0.5f * c(3);
 	q(0, 2) = q(2, 0) = 0.5f * c(4);
 	q(1, 2) = q(2, 1) = 0.5f * c(5);
-	Vector3f eig = q.eigenvalues().real().normalized();
-	if (eig(0) * eig(1) < -2e-4f || eig(0) * eig(2) < -2e-4f || eig(1) * eig(2) < -2e-4f) return false;
+	Vector3d eig = q.eigenvalues().real().normalized();
+	if (eig(0) * eig(1) < -DBL_EPSILON || eig(0) * eig(2) < -DBL_EPSILON || eig(1) * eig(2) < -DBL_EPSILON) return false;
 	return true;
 }
 
@@ -96,20 +97,17 @@ inline dmat3 getQMat(VectorXd c) {
 bool QuadricFit::lineSearch(VectorXd c1, VectorXd c2, double& t) const {
 	double det3poly[4], root[3];
 	dmat3 a = getQMat(c1), b = getQMat(c2);
+	b -= a;
 	det3poly[0] = determinant(a);
 	det3poly[1] = determinant(dmat3(b[0], a[1], a[2])) + determinant(dmat3(a[0], b[1], a[2])) + determinant(dmat3(a[0], a[1], b[2]));
 	det3poly[2] = determinant(dmat3(a[0], b[1], b[2])) + determinant(dmat3(b[0], a[1], b[2])) + determinant(dmat3(b[0], b[1], a[2]));
 	det3poly[3] = determinant(b);
-	//det3poly[0] = stp(a[0], a[1], a[2]);
-	//det3poly[1] = stp(b[0], a[1], a[2]) + stp(a[0], b[1], a[2]) + stp(a[0], a[1], b[2]);
-	//det3poly[2] = stp(a[0], b[1], b[2]) + stp(b[0], a[1], b[2]) + stp(b[0], b[1], a[2]);
-	//det3poly[3] = stp(b[0], b[1], b[2]);
+
 	int nr3 = SolveCubic(det3poly, root), minRoot = -1;
 	double minVal = -1.f;
 	for (int i = 0; i < nr3; ++i) {
-		VectorXd c = c1 + root[i] * c2;
+		VectorXd c = (1.0 - root[i]) * c1 + root[i] * c2;
 		dmat3 q = getQMat(c);
-		//cout << "Det: " << determinant(q) << endl;
 		if (isEllipsoid(c)) {
 			double err = getTaubinErr(c);
 			if (minRoot == -1 || err < minVal) {
@@ -119,23 +117,23 @@ bool QuadricFit::lineSearch(VectorXd c1, VectorXd c2, double& t) const {
 		}
 	}
 	if (minRoot == -1) {
-		//for (int i = 0; i < 4; ++i) {
-		//	cout << det3poly[i] << ' ';
-		//}
-		//cout << endl;
-		//for (int i = 0; i < nr3; ++i) {
-		//	cout << root[i] << ' ';
-		//}
-		//cout << endl;
-		//cout << c1 << endl;
-		//cout << endl;
-		//cout << c2 << endl;
-		//cout << endl;
-		//for (int i = 0; i < nr3; ++i) {
-		//	VectorXf c = c1 + root[i] * c2;
-		//	cout << c(0) << ' ' << c(1) << ' ' << c(2) << endl;
-		//}
-		//cout << endl;
+		if (isEllipsoid(c2)) {
+			for (int i = 0; i < 4; ++i) {
+				cout << det3poly[i] << ' ';
+			}
+			cout << endl;
+			for (int i = 0; i < nr3; ++i) {
+				cout << root[i] << ' ';
+				VectorXd c = (1.0 - root[i]) * c1 + root[i] * c2;
+				dmat3 q = getQMat(c);
+				cout << "Det: " << determinant(q) << endl;
+			}
+			cout << endl;
+			cout << c1 << endl;
+			cout << endl;
+			cout << c2 << endl;
+			cout << endl;
+		}
 		return false;
 	}
 	t = root[minRoot];
@@ -178,7 +176,6 @@ Quadric QuadricFit::fitQuadric() const {
 	//float var = vc.transpose() * M * vc;
 	//float var = minVal * vc.transpose() * N * vc;
 	//return Quadric(c, sqrt(var));
-
 	VectorXd minC = ges.eigenvectors().col(minCol).real();
 	VectorXd secC = ges.eigenvectors().col(secCol).real();
 	if (isEllipsoid(minC)) {
@@ -186,15 +183,22 @@ Quadric QuadricFit::fitQuadric() const {
 			c[i] = minC(i);
 		}
 		double var = minC.transpose() * M * minC;
+		if (var < 0) {
+			return Quadric(c, FLT_EPSILON);
+		}
 		return Quadric(c, sqrt(var));
 	}
 	double t;
 	if (lineSearch(minC, secC, t)) {
-		VectorXd vc = minC + t * secC;
+		//VectorXd vc = minC + t * secC;
+		VectorXd vc = (1.0 - t) * minC + t * secC;
 		for (int i = 0; i < 10; ++i) {
 			c[i] = vc(i);
 		}
 		double var = vc.transpose() * M * vc;
+		if (var < 0) {
+			return Quadric(c, FLT_EPSILON);
+		}
 		return Quadric(c, sqrt(var));
 	}
 
@@ -210,11 +214,6 @@ Quadric QuadricFit::fitQuadric() const {
 	for (int i = 0; i < 10; ++i) {
 		if (fabs(betas[i]) > 0) {
 			VectorXd vc = ges.eigenvectors().col(i).real();
-			//mat3 Qmat = getQMat(vc);
-			//double det2 = Qmat[0][0] * Qmat[1][1] - Qmat[1][0] * Qmat[0][1];
-			//double det3 = determinant(Qmat);
-			//double det1 = Qmat[0][0];
-			//if (det2 > 0 && ((det1 > 0 && det3 > 0) || (det1 < 0 && det3 < 0))) {
 			if (isEllipsoid(vc)) {
 				double err = getTaubinErr(vc);
 				if (secCol == -1 || err < secVal) {
@@ -229,14 +228,15 @@ Quadric QuadricFit::fitQuadric() const {
 		return Quadric(c, -1.f);
 	}
 	secC = ges.eigenvectors().col(secCol).real();
-	//cout << 1 << endl;
 	if (lineSearch(minC, secC, t)) {
-		//cout << 2 << endl;
-		VectorXd vc = minC + t * secC;
+		VectorXd vc = (1.0 - t) * minC + t * secC;
 		for (int i = 0; i < 10; ++i) {
 			c[i] = vc[i];
 		}
 		double var = vc.transpose() * M * vc;
+		if (var < 0) {
+			return Quadric(c, FLT_EPSILON);
+		}
 		return Quadric(c, sqrt(var));
 	}
 	for (int i = 0; i < 10; ++i) {
@@ -244,18 +244,20 @@ Quadric QuadricFit::fitQuadric() const {
 	}
 	cout << 3 << endl;
 	double var = secC.transpose() * M * secC;
+	if (var < 0) {
+		return Quadric(c, FLT_EPSILON);
+	}
 	return Quadric(c, sqrt(var));
 }
 
 void coordinateSystem(const vec3 &a, vec3 &b, vec3 &c) {
-	if (std::abs(a.x) > std::abs(a.y)) {
-		float invLen = 1.0f / std::sqrt(a.x * a.x + a.z * a.z);
-		c = vec3(a.z * invLen, 0.0f, -a.x * invLen);
+	if (a.x == 0 && a.y == 0) {
+		b = vec3(1, 0, 0);
+		c = vec3(0, 1, 0);
 	} else {
-		float invLen = 1.0f / std::sqrt(a.y * a.y + a.z * a.z);
-		c = vec3(0.0f, a.z * invLen, -a.y * invLen);
+		b = vec3(a.y, -a.x, 0);
+		c = normalize(cross(a, b));
 	}
-	b = cross(c, a);
 }
 
 void QuadricFit::addTraingleSGGX(const vec3 tri[3], const Quadric& q) {

@@ -24,7 +24,7 @@ struct VoxelData {
     float sggx[6];
     float albedo[3];
     float sigma;
-    //float density;
+    float density;
 };
 
 vector<VoxelData> voxelDatas;
@@ -181,7 +181,7 @@ int main(int argc, char **argv) {
                     vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
                     vd.sigma = voxel.quadric.sigma;
                     //vd.sigma = 0.001f;
-                    //vd.density = voxel.density;
+                    vd.density = voxel.density;
                     voxelDatas.emplace_back(vd);
                 }
             }

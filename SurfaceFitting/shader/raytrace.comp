@@ -13,6 +13,7 @@ struct VoxelData {
     float sggx[6];
     float albedo[3];
     float sigma;
+    float density;
 };
 
 layout (rgba32f, binding = 0) uniform image2D imgOutput;
@@ -196,36 +197,37 @@ float evalDiffuse(SGGX sggx, vec3 wi, vec3 wo) {
 
 float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
     //return evalSpecular(sggx, wo, wi);
-    return evalDiffuse(sggx, wo, wi);
-    //return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
+    //return evalDiffuse(sggx, wo, wi);
+    return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
 }
 
 float densityScale = 1000.f;
 
-float getDensityScale(float sigma) {
-    //return densityScale;
-    return 1.f/sigma;
+float getDensityScale(float density) {
+    return densityScale;
 }
 
-float density(float q[10], vec3 p, float sigma) {
+float density(float q[10], vec3 p, float sigma, float d) {
     //float d = f(q, p)/length(df(q, p));
-    return getDensityScale(sigma)*GaussianDistrubtion(f(q, p), 0, sigma);
+    return getDensityScale(d)*GaussianDistrubtion(f(q, p), 0, sigma);
     //return 1.f;
 }
 
-Frame coordinateSystem(vec3 v1) {
-    vec3 v2, v3;
-    float s = 1.f;
-    float a = -1.f/(s+v1.z);
-    float b = v1.x*v1.y*a;
-    v2 = vec3(1.f+s*v1.x*v1.x*a, s*b, -s*v1.x);
-    v3 = vec3(b, s+v1.y*v1.y*a, -v1.y);
-    return Frame(v2, v3, v1);
+Frame coordinateSystem(vec3 n) {
+    vec3 s, t;
+    if (n.x == 0 && n.y == 0) {
+        s = vec3(1, 0, 0);
+        t = vec3(0, 1, 0);
+    } else {
+        s = vec3(n.y, -n.x, 0);
+        t = normalize(cross(n, s));
+    }
+    return Frame(s, t, n);
 }
 
 vec3 evalTransmittance(Ray r, float tMax) {
     VoxelData voxel = voxels[r.medium];
-    float maxDensity = getDensityScale(voxel.sigma)*GaussianDistrubtion(0, 0, voxel.sigma);
+    float maxDensity = getDensityScale(voxel.density)*GaussianDistrubtion(0, 0, voxel.sigma);
     SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
     int nSamples = 2;
     float result = 0.f;
@@ -239,12 +241,13 @@ vec3 evalTransmittance(Ray r, float tMax) {
             }
             vec3 p = r.o+t*r.d;
 
-            // vec3 n = normalize(df(voxel.q, p));
-            // Frame f = coordinateSystem(n);
-            // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
-            // float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(wi, sggx);
+            vec3 n = normalize(df(voxel.q, p));
+            Frame f = coordinateSystem(n);
+            vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+            float densityAtT = density(voxel.q, p, voxel.sigma, voxel.density)*sigmaWi(wi, sggx);
 
-            float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(-r.d, sggx);
+            //float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(-r.d, sggx);
+            //float densityAtT = density(voxel.q, p, voxel.sigma, voxel.density);
             if (densityAtT/maxDensity > random())
                 break;
         }
@@ -262,7 +265,7 @@ MediumResult sampleDistance(Ray r, float tMax) {
     mRes.pdfFailure = 1.f;
     bool success = false;
     float t = 0.f;
-    float maxDensity = getDensityScale(voxel.sigma)*GaussianDistrubtion(0, 0, voxel.sigma);
+    float maxDensity = getDensityScale(voxel.density)*GaussianDistrubtion(0, 0, voxel.sigma);
     vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
     while (true) {
         t += sampleExponential(random(), maxDensity);
@@ -270,12 +273,13 @@ MediumResult sampleDistance(Ray r, float tMax) {
             break;
         vec3 p = r.o+t*r.d;
 
-        // vec3 n = normalize(df(voxel.q, p));
-        // Frame f = coordinateSystem(n);
-        // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
-        // float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(wi, mRes.sggx);
+        vec3 n = normalize(df(voxel.q, p));
+        Frame f = coordinateSystem(n);
+        vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+        float densityAtT = density(voxel.q, p, voxel.sigma, voxel.density)*sigmaWi(wi, mRes.sggx);
 
-        float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(-r.d, mRes.sggx);
+        //float densityAtT = density(voxel.q, p, voxel.sigma)*sigmaWi(-r.d, mRes.sggx);
+        //float densityAtT = density(voxel.q, p, voxel.sigma, voxel.density);
         if (densityAtT/maxDensity > random()) {
             mRes.p = p;
             mRes.sigma_s = albedo*densityAtT;
@@ -427,7 +431,7 @@ vec3 sampleLdPBRT(vec3 intr, vec3 wo, vec3 beta, vec3 r_p, SGGX phase, int mediu
                         vec3 p = lightRay.o+lightRay.d*t;
                         // vec3 sigma_a = sigma_A*getSigmaAttenuation(voxel.q, p, voxel.sigma);
                         // vec3 sigma_s = sigma_S*getSigmaAttenuation(voxel.q, p, voxel.sigma);
-                        vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma));
+                        vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma, voxel.density));
                         vec3 sigma_s = albedo*sigma_t;
                         vec3 sigma_a = sigma_t-sigma_s;
 
@@ -532,7 +536,7 @@ vec3 LiPBRT(Ray r) {
                         // vec3 sigma_a = sigma_A*getSigmaAttenuation(voxel.q, p, voxel.sigma);
                         // vec3 sigma_s = sigma_S*getSigmaAttenuation(voxel.q, p, voxel.sigma);
 
-                        vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma));
+                        vec3 sigma_t = vec3(sigma_wi*density(voxel.q, p, voxel.sigma, voxel.density));
                         vec3 sigma_s = albedo*sigma_t;
                         vec3 sigma_a = sigma_t-sigma_s;
 
@@ -661,8 +665,7 @@ vec3 Li(Ray r) {
             // vec3 n = normalize(df(voxel.q, r.o));
             // Frame f = coordinateSystem(n);
             // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
-            // //return vec3(sigmaWi(wi, sggx));
-            // return (f.t+1.f)/2.f;
+            // return vec3(sigmaWi(wi, sggx));
 
             mRes = sampleDistance(r, tMax);
             if (mRes.success) {
