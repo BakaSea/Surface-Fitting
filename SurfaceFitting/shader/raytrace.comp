@@ -659,7 +659,7 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            //return vec3(tMax);
+            // return vec3(tMax);
             // VoxelData voxel = voxels[r.medium];
             // SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
             // vec3 n = normalize(df(voxel.q, r.o));
@@ -672,11 +672,19 @@ vec3 Li(Ray r) {
                 inMedium = true;
                 throughput *= mRes.sigma_s*mRes.transmittance/mRes.pdfSuccess;
                 DirectSamplingResult dRes = sampleLd(mRes.p, r.medium);
-                float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
+
+                VoxelData voxel = voxels[r.medium];
+                vec3 n = normalize(df(voxel.q, mRes.p));
+                Frame f = coordinateSystem(n);
+                vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+                vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
+                float phaseVal = phasePdf(mRes.sggx, wo, wi);
+
+                //float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
                 // Note that we are only using point light.
                 float weight = miWeight(dRes.pdf, 0.f);
                 L += throughput*dRes.Ld*phaseVal*weight;
-                //L = throughput;
+                //L = throughput*phaseVal;
                 // Multiple scattering prohibited
                 break;
             }
