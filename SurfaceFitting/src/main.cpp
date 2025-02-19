@@ -122,17 +122,17 @@ int main(int argc, char **argv) {
     	cerr << "No mesh file specified?  Loading default mesh: " << defaultInput << endl;
     	meshfile = defaultInput;
     }
-    tinyobj::ObjReaderConfig readerConfig;
-    tinyobj::ObjReader reader;
-    if (!reader.ParseFromFile(meshfile, readerConfig)) {
-        if (!reader.Error().empty()) {
-            cerr << "TinyObjReader: " << reader.Error();
-        }
-        exit(1);
-    }
-    if (!reader.Warning().empty()) {
-        cout << "TinyObjReader: " << reader.Warning();
-    }
+    //tinyobj::ObjReaderConfig readerConfig;
+    //tinyobj::ObjReader reader;
+    //if (!reader.ParseFromFile(meshfile, readerConfig)) {
+    //    if (!reader.Error().empty()) {
+    //        cerr << "TinyObjReader: " << reader.Error();
+    //    }
+    //    exit(1);
+    //}
+    //if (!reader.Warning().empty()) {
+    //    cout << "TinyObjReader: " << reader.Warning();
+    //}
 
     int xslice = 1, yslice = 1, zslice = 1;
     if (argc > 2) xslice = atoi(argv[2]);
@@ -140,23 +140,23 @@ int main(int argc, char **argv) {
     if (argc > 4) zslice = atoi(argv[4]);
 
     //ofstream outHull("hull.txt");
-    auto& attrib = reader.GetAttrib();
-    auto& shapes = reader.GetShapes();
-    float scale = 10.0f;
+    //auto& attrib = reader.GetAttrib();
+    //auto& shapes = reader.GetShapes();
+    //float scale = 10.0f;
 
-    vector<Vertex> vtx;
-    vector<unsigned int> ind;
-    for (int i = 0; i < attrib.vertices.size(); i += 3) {
-        vec3 position = vec3(attrib.vertices[i], attrib.vertices[i + 1], attrib.vertices[i + 2]) * scale;
-        vec3 normal = vec3(0);
-        vtx.push_back(Vertex(position, normal, vec2(0)));
-    }
-    for (size_t s = 0; s < shapes.size(); ++s) {
-        for (int i = 0; i < shapes[s].mesh.indices.size(); ++i) {
-            ind.push_back(shapes[s].mesh.indices[i].vertex_index);
-        }
-    }
-    Mesh mesh(vtx, ind, {});
+    //vector<Vertex> vtx;
+    //vector<unsigned int> ind;
+    //for (int i = 0; i < attrib.vertices.size(); i += 3) {
+    //    vec3 position = vec3(attrib.vertices[i], attrib.vertices[i + 1], attrib.vertices[i + 2]) * scale;
+    //    vec3 normal = vec3(0);
+    //    vtx.push_back(Vertex(position, normal, vec2(0)));
+    //}
+    //for (size_t s = 0; s < shapes.size(); ++s) {
+    //    for (int i = 0; i < shapes[s].mesh.indices.size(); ++i) {
+    //        ind.push_back(shapes[s].mesh.indices[i].vertex_index);
+    //    }
+    //}
+    //Mesh mesh(vtx, ind, {});
 
     VoxelLayer layer(meshfile, ivec3(xslice, yslice, zslice));
 

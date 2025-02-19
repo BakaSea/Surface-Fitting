@@ -117,23 +117,23 @@ bool QuadricFit::lineSearch(VectorXd c1, VectorXd c2, double& t) const {
 		}
 	}
 	if (minRoot == -1) {
-		if (isEllipsoid(c2)) {
-			for (int i = 0; i < 4; ++i) {
-				cout << det3poly[i] << ' ';
-			}
-			cout << endl;
-			for (int i = 0; i < nr3; ++i) {
-				cout << root[i] << ' ';
-				VectorXd c = (1.0 - root[i]) * c1 + root[i] * c2;
-				dmat3 q = getQMat(c);
-				cout << "Det: " << determinant(q) << endl;
-			}
-			cout << endl;
-			cout << c1 << endl;
-			cout << endl;
-			cout << c2 << endl;
-			cout << endl;
-		}
+		//if (isEllipsoid(c2)) {
+		//	for (int i = 0; i < 4; ++i) {
+		//		cout << det3poly[i] << ' ';
+		//	}
+		//	cout << endl;
+		//	for (int i = 0; i < nr3; ++i) {
+		//		cout << root[i] << ' ';
+		//		VectorXd c = (1.0 - root[i]) * c1 + root[i] * c2;
+		//		dmat3 q = getQMat(c);
+		//		cout << "Det: " << determinant(q) << endl;
+		//	}
+		//	cout << endl;
+		//	cout << c1 << endl;
+		//	cout << endl;
+		//	cout << c2 << endl;
+		//	cout << endl;
+		//}
 		return false;
 	}
 	t = root[minRoot];
@@ -242,7 +242,7 @@ Quadric QuadricFit::fitQuadric() const {
 	for (int i = 0; i < 10; ++i) {
 		c[i] = secC(i);
 	}
-	cout << 3 << endl;
+	//cout << 3 << endl;
 	double var = secC.transpose() * M * secC;
 	if (var < 0) {
 		return Quadric(c, FLT_EPSILON);
