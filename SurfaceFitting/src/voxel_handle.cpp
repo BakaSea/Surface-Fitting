@@ -6,6 +6,7 @@
 #include "voxel_handle.h"
 #include <iostream>
 #include <GLFW/glfw3.h>
+#include <glm/ext/matrix_transform.hpp>
 #include "tiny_obj_loader.h"
 #include "tiny_gltf.h"
 #include "triangle_clip.h"
@@ -185,7 +186,7 @@ void VoxelLayer::loadFromObj(string meshFile) {
     cout << (endTime - startTime) * 1000 << "ms" << endl;
 }
 
-void processMesh(tinygltf::Model& model, tinygltf::Mesh& mesh, function<void(const vec3[3])>& func) {
+void processMesh(tinygltf::Model& model, tinygltf::Mesh& mesh, mat4 M, function<void(const vec3[3])>& func) {
     for (auto& primitive : mesh.primitives) {
         assert(primitive.mode == TINYGLTF_MODE_TRIANGLES);
         auto& idxAccessor = model.accessors[primitive.indices];
@@ -218,18 +219,21 @@ void processMesh(tinygltf::Model& model, tinygltf::Mesh& mesh, function<void(con
         int byteStride = idxAccessor.ByteStride(idxBufferView);
         for (int i = 0; i < idxAccessor.count; ++i) {
             if (idxAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
-                unsigned short temp = *((unsigned short*)(idxBuffer.data.data() + idxBufferView.byteOffset + idxAccessor.byteOffset + i * byteStride));
+                unsigned short temp = *((unsigned short*)(&idxBuffer.data.at(0) + idxBufferView.byteOffset + idxAccessor.byteOffset + i * byteStride));
                 indices.push_back(temp);
             } else {
-                unsigned int temp = *((unsigned int*)(idxBuffer.data.data() + idxBufferView.byteOffset + idxAccessor.byteOffset + i * byteStride));
+                unsigned int temp = *((unsigned int*)(&idxBuffer.data.at(0) + idxBufferView.byteOffset + idxAccessor.byteOffset + i * byteStride));
                 indices.push_back(temp);
             }
         }
         vector<vec3> positions;
         byteStride = posAccessor->ByteStride(*posBufferView);
         for (int i = 0; i < posAccessor->count; ++i) {
-            vec3 temp = *((vec3*)(posBuffer->data.data() + posAccessor->byteOffset + i * byteStride));
-            positions.push_back(temp);
+            vec3 temp = *((vec3*)(&posBuffer->data.at(0) + posBufferView->byteOffset + posAccessor->byteOffset + i * byteStride));
+            vec4 pos = M * vec4(temp, 1.f);
+            pos /= pos.w;
+            positions.push_back(pos);
+            //positions.push_back(temp);
         }
         for (int i = 0; i < indices.size(); i += 3) {
             vec3 tri[3] = { positions[indices[i]], positions[indices[i + 1]], positions[indices[i + 2]] };
@@ -238,12 +242,37 @@ void processMesh(tinygltf::Model& model, tinygltf::Mesh& mesh, function<void(con
     }
 }
 
-void processNode(tinygltf::Model& model, tinygltf::Node& node, function<void(const vec3[3])>& func) {
+void processNode(tinygltf::Model& model, tinygltf::Node& node, mat4 M, function<void(const vec3[3])>& func) {
+    if (!node.matrix.empty()) {
+        dmat4 N;
+        memcpy(&N, node.matrix.data(), sizeof(N));
+        M *= mat4(N);
+    }
+    if (!node.translation.empty()) {
+        M = translate(M, vec3(node.translation[0], node.translation[1], node.translation[2]));
+    }
+    if (!node.rotation.empty()) {
+        float angle;
+        vec3 axis;
+
+        float angleRadians = 2.f * acos(node.rotation[3]);
+        if (angleRadians == 0.f) {
+            axis = vec3(0, 0, 1);
+        } else {
+            float denom = sqrt(1.f - node.rotation[3] * node.rotation[3]);
+            axis = vec3(node.rotation[0], node.rotation[1], node.rotation[2]) / denom;
+        }
+
+        M = rotate(M, angleRadians, axis);
+    }
+    if (!node.scale.empty()) {
+        M = scale(M, vec3(node.scale[0], node.scale[1], node.scale[2]));
+    }
     if (0 <= node.mesh && node.mesh < model.meshes.size()) {
-        processMesh(model, model.meshes[node.mesh], func);
+        processMesh(model, model.meshes[node.mesh], M, func);
     }
     for (int child : node.children) {
-        processNode(model, model.nodes[child], func);
+        processNode(model, model.nodes[child], M, func);
     }
 }
 
@@ -280,7 +309,7 @@ void VoxelLayer::loadFromGltf(string meshFile) {
         }
     };
     for (auto& node : scene.nodes) {
-        processNode(model, model.nodes[node], func);
+        processNode(model, model.nodes[node], mat4(1.f), func);
     }
 
     vec3 cap = (bbmax - bbmin) / vec3(slice);
@@ -321,7 +350,7 @@ void VoxelLayer::loadFromGltf(string meshFile) {
         }
     };
     for (auto& node : scene.nodes) {
-        processNode(model, model.nodes[node], func);
+        processNode(model, model.nodes[node], mat4(1.f), func);
     }
 
     ofstream out("param.txt");
@@ -371,7 +400,7 @@ void VoxelLayer::loadFromGltf(string meshFile) {
         }
     };
     for (auto& node : scene.nodes) {
-        processNode(model, model.nodes[node], func);
+        processNode(model, model.nodes[node], mat4(1.f), func);
     }
 
     for (int i = 0; i < slice[0]; ++i) {
