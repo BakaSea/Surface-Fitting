@@ -32,12 +32,14 @@ vector<VoxelData> voxelDatas;
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void processInput(GLFWwindow *window);
 void renderQuad();
 
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
+int renderMode = 0;
 
 // camera
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
@@ -77,6 +79,7 @@ int main(int argc, char **argv) {
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
 
     // tell GLFW to capture our mouse
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -122,17 +125,6 @@ int main(int argc, char **argv) {
     	cerr << "No mesh file specified?  Loading default mesh: " << defaultInput << endl;
     	meshfile = defaultInput;
     }
-    //tinyobj::ObjReaderConfig readerConfig;
-    //tinyobj::ObjReader reader;
-    //if (!reader.ParseFromFile(meshfile, readerConfig)) {
-    //    if (!reader.Error().empty()) {
-    //        cerr << "TinyObjReader: " << reader.Error();
-    //    }
-    //    exit(1);
-    //}
-    //if (!reader.Warning().empty()) {
-    //    cout << "TinyObjReader: " << reader.Warning();
-    //}
 
     int xslice = 1, yslice = 1, zslice = 1;
     if (argc > 2) xslice = atoi(argv[2]);
@@ -211,48 +203,36 @@ int main(int argc, char **argv) {
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
 
-        rtCompShader.use();
-        rtCompShader.setMat4("viewInv", inverse(view));
-        rtCompShader.setMat4("projectionInv", inverse(projection));
-        rtCompShader.setVec3("cameraPos", camera.Position);
-        rtCompShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
-        rtCompShader.setInt("voxelSize", voxelDatas.size());
-        if (moved) {
-            currentSample = 1;
-            glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, NULL);
-            moved = false;
-        } else {
-            currentSample++;
-        }
-        rtCompShader.setInt("currentSample", currentSample);
-        glDispatchCompute(SCR_WIDTH, SCR_HEIGHT, 1);
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-        //if (currentSample == 1 || currentSample == 16 || currentSample == 64 || currentSample == 128 || currentSample == 256 || currentSample == 512 || currentSample == 1024) {
-        //    glBindTexture(GL_TEXTURE_2D, texture);
-        //    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, imgColor);
-        //    float R = 0, G = 0, B = 0;
-        //    for (int i = 0; i < SCR_WIDTH; ++i) {
-        //        for (int j = 0; j < SCR_HEIGHT; ++j) {
-        //            R += imgColor[i * SCR_HEIGHT * 4 + j * 4];
-        //            G += imgColor[i * SCR_HEIGHT * 4 + j * 4 + 1];
-        //            B += imgColor[i * SCR_HEIGHT * 4 + j * 4 + 2];
-        //        }
-        //    }
-        //    R /= SCR_WIDTH * SCR_HEIGHT;
-        //    G /= SCR_WIDTH * SCR_HEIGHT;
-        //    B /= SCR_WIDTH * SCR_HEIGHT;
-        //    cout << R << ' ' << G << ' ' << B << endl;
-        //}
-
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        raytraceShader.use();
-        renderQuad();
 
-        //simpleShader.use();
-        //simpleShader.setMat4("model", mat4(1.0f));
-        //simpleShader.setMat4("projection", projection);
-        //simpleShader.setMat4("view", view);
-        //mesh.Draw(simpleShader);
+        if (renderMode == 0) {
+            rtCompShader.use();
+            rtCompShader.setMat4("viewInv", inverse(view));
+            rtCompShader.setMat4("projectionInv", inverse(projection));
+            rtCompShader.setVec3("cameraPos", camera.Position);
+            rtCompShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
+            rtCompShader.setInt("voxelSize", voxelDatas.size());
+            if (moved) {
+                currentSample = 1;
+                glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, NULL);
+                moved = false;
+            } else {
+                currentSample++;
+            }
+            rtCompShader.setInt("currentSample", currentSample);
+            glDispatchCompute(SCR_WIDTH, SCR_HEIGHT, 1);
+            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            raytraceShader.use();
+            renderQuad();
+        } else if (renderMode == 1) {
+            simpleShader.use();
+            simpleShader.setMat4("model", mat4(1.0f));
+            simpleShader.setMat4("projection", projection);
+            simpleShader.setMat4("view", view);
+            for (auto& mesh : layer.meshes) {
+                mesh.Draw(simpleShader);
+            }
+        }
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
@@ -293,6 +273,12 @@ void renderQuad() {
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+        renderMode = (renderMode + 1) % 2;
+    }
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly

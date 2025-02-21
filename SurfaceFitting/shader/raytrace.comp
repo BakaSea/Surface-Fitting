@@ -659,7 +659,7 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            // return vec3(tMax);
+            return vec3(tMax);
             // VoxelData voxel = voxels[r.medium];
             // SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
             // vec3 n = normalize(df(voxel.q, r.o));

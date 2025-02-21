@@ -101,7 +101,7 @@
       <Filter>资源文件</Filter>
     </None>
     <None Include="shader\raytrace.vs">
-      <Filter>源文件</Filter>
+      <Filter>资源文件</Filter>
     </None>
   </ItemGroup>
 </Project>
