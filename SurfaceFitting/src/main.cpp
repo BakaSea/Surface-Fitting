@@ -54,7 +54,7 @@ float lastFrame = 0.0f;
 
 float imgColor[SCR_WIDTH * SCR_HEIGHT * 4];
 
-int main(int argc, char **argv) {
+int mainOpenGL(int argc, char **argv) {
     // glfw: initialize and configure
     // ------------------------------
     glfwInit();
