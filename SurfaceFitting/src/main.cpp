@@ -24,7 +24,7 @@ struct VoxelData {
     float sggx[6];
     float albedo[3];
     float sigma;
-    float density;
+    float alpha;
 };
 
 vector<VoxelData> voxelDatas;
@@ -54,7 +54,7 @@ float lastFrame = 0.0f;
 
 float imgColor[SCR_WIDTH * SCR_HEIGHT * 4];
 
-int mainOpenGL(int argc, char **argv) {
+int main(int argc, char **argv) {
     // glfw: initialize and configure
     // ------------------------------
     glfwInit();
@@ -126,10 +126,8 @@ int mainOpenGL(int argc, char **argv) {
     	meshfile = defaultInput;
     }
 
-    int xslice = 1, yslice = 1, zslice = 1;
-    if (argc > 2) xslice = atoi(argv[2]);
-    if (argc > 3) yslice = atoi(argv[3]);
-    if (argc > 4) zslice = atoi(argv[4]);
+    int slice = 1;
+    if (argc > 2) slice = atoi(argv[2]);
 
     //ofstream outHull("hull.txt");
     //auto& attrib = reader.GetAttrib();
@@ -150,11 +148,11 @@ int mainOpenGL(int argc, char **argv) {
     //}
     //Mesh mesh(vtx, ind, {});
 
-    VoxelLayer layer(meshfile, ivec3(xslice, yslice, zslice));
+    VoxelLayer layer(meshfile, slice);
 
-    for (int i = 0; i < xslice; ++i) {
-        for (int j = 0; j < yslice; ++j) {
-            for (int k = 0; k < zslice; ++k) {
+    for (int i = 0; i < layer.slice.x; ++i) {
+        for (int j = 0; j < layer.slice.y; ++j) {
+            for (int k = 0; k < layer.slice.z; ++k) {
                 auto& voxel = layer.voxels[i][j][k];
                 if (voxel.fit.vertices > 0) {
                     VoxelData vd;
@@ -173,7 +171,7 @@ int mainOpenGL(int argc, char **argv) {
                     vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
                     vd.sigma = voxel.quadric.sigma;
                     //vd.sigma = 0.001f;
-                    vd.density = voxel.density;
+                    vd.alpha = voxel.alpha;
                     voxelDatas.emplace_back(vd);
                 }
             }

@@ -10,17 +10,17 @@
 #include "tiny_obj_loader.h"
 #include "triangle_clip.h"
 
-VoxelLayer::VoxelLayer(string meshFile, ivec3 slice) : slice(slice) {
-    voxels = vector<vector<vector<Voxel>>>(slice[0], vector<vector<Voxel>>(slice[1], vector<Voxel>(slice[2])));
+VoxelLayer::VoxelLayer(string meshFile, int s) {
+    //voxels = vector<vector<vector<Voxel>>>(slice[0], vector<vector<Voxel>>(slice[1], vector<Voxel>(slice[2])));
     string objSuffix = ".obj";
     if (!meshFile.compare(meshFile.size() - objSuffix.size(), objSuffix.size(), objSuffix)) {
-        loadFromObj(meshFile);
+        loadFromObj(meshFile, s);
     } else {
-        loadFromGltf(meshFile);
+        loadFromGltf(meshFile, s);
     }
 }
 
-void VoxelLayer::loadFromObj(string meshFile) {
+void VoxelLayer::loadFromObj(string meshFile, int s) {
     tinyobj::ObjReaderConfig readerConfig;
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(meshFile, readerConfig)) {
@@ -35,21 +35,38 @@ void VoxelLayer::loadFromObj(string meshFile) {
 
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
-    float scale = 2.0f;
+    float scale = 5.0f;
 
     for (size_t s = 0; s < shapes.size(); ++s) {
         vector<unsigned int> indices(shapes[s].mesh.indices.size());
         vector<Vertex> vertices(attrib.vertices.size() / 3);
+        vector<float> weight(vertices.size());
         for (int i = 0; i < shapes[s].mesh.indices.size(); ++i) {
             indices[i] = shapes[s].mesh.indices[i].vertex_index;
         }
         for (int i = 0; i < vertices.size(); ++i) {
             vertices[i].Position = scale * vec3(attrib.vertices[3 * i], attrib.vertices[3 * i + 1], attrib.vertices[3 * i + 2]);
         }
+        for (int i = 0; i < indices.size(); i += 3) {
+            auto& v0 = vertices[indices[i]], & v1 = vertices[indices[i + 1]], & v2 = vertices[indices[i + 2]];
+            vec3 e1 = v1.Position - v0.Position, e2 = v2.Position - v0.Position;
+            vec3 n = cross(e1, e2);
+            float area = n.length() / 2.f;
+            n = normalize(n);
+            v0.Normal += area * n;
+            v1.Normal += area * n;
+            v2.Normal += area * n;
+            weight[indices[i]] += area;
+            weight[indices[i + 1]] += area;
+            weight[indices[i + 2]] += area;
+        }
+        for (int i = 0; i < vertices.size(); ++i) {
+            vertices[i].Normal /= weight[i];
+        }
         meshes.push_back(Mesh(vertices, indices, {}));
     }
 
-    handleMeshes();
+    handleMeshes(s);
 }
 
 void VoxelLayer::processMesh(tinygltf::Model& model, tinygltf::Mesh& mesh, mat4 M) {
@@ -149,7 +166,7 @@ void VoxelLayer::processNode(tinygltf::Model& model, tinygltf::Node& node, mat4 
     }
 }
 
-void VoxelLayer::loadFromGltf(string meshFile) {
+void VoxelLayer::loadFromGltf(string meshFile, int s) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     string err, warn;
@@ -177,10 +194,10 @@ void VoxelLayer::loadFromGltf(string meshFile) {
         processNode(model, model.nodes[node], mat4(1.f));
     }
 
-    handleMeshes();
+    handleMeshes(s);
 }
 
-void VoxelLayer::handleMeshes() {
+void VoxelLayer::handleMeshes(int s) {
     vec3 bbmin(INFINITY, INFINITY, INFINITY), bbmax(-INFINITY, -INFINITY, -INFINITY);
     for (auto& mesh : meshes) {
         for (int i = 0; i < mesh.vertices.size(); ++i) {
@@ -189,7 +206,15 @@ void VoxelLayer::handleMeshes() {
         }
     }
 
-    vec3 cap = (bbmax - bbmin) / vec3(slice);
+    vec3 cap = (bbmax - bbmin) / float(s);
+    float minCap = std::min(cap.x, std::min(cap.y, cap.z));
+    cap = vec3(minCap);
+    for (int i = 0; i < 3; ++i) {
+        slice[i] = ceil((bbmax[i] - bbmin[i]) / cap[i]);
+    }
+    voxels = vector<vector<vector<Voxel>>>(slice.x, vector<vector<Voxel>>(slice.y, vector<Voxel>(slice.z)));
+    cout << slice.x << ' ' << slice.y << ' ' << slice.z << endl;
+
     double startTime = glfwGetTime();
     for (int i = 0; i < slice[0]; ++i) {
         for (int j = 0; j < slice[1]; ++j) {
@@ -243,50 +268,13 @@ void VoxelLayer::handleMeshes() {
                         out << ' ' << voxel.quadric.c[q];
                     }
                     out << ' ' << voxel.quadric.sigma;
-                    voxel.quadric.sigma = 1e-5f;
+                    //voxel.quadric.sigma = 1e-5f;
                     //voxel.sggx = voxel.fit.fitSGGX();
-                    voxel.density = voxel.fit.areaSum / (cap.x * cap.y * cap.z);
-                    out << ' ' << voxel.density << endl;
-                }
-            }
-        }
-    }
-
-    for (auto& mesh : meshes) {
-        for (int t = 0; t < mesh.indices.size(); t += 3) {
-            vec3 tri[3] = { mesh.vertices[mesh.indices[t]].Position, mesh.vertices[mesh.indices[t + 1]].Position, mesh.vertices[mesh.indices[t + 2]].Position };
-            vec3 tmin = min(tri[0], min(tri[1], tri[2])), tmax = max(tri[0], max(tri[1], tri[2]));
-            int xstart = std::max(int((tmin.x - bbmin.x) / cap.x), 0);
-            int ystart = std::max(int((tmin.y - bbmin.y) / cap.y), 0);
-            int zstart = std::max(int((tmin.z - bbmin.z) / cap.z), 0);
-            int xend = std::min(int((tmax.x - bbmin.x) / cap.x), slice[0] - 1);
-            int yend = std::min(int((tmax.y - bbmin.y) / cap.y), slice[1] - 1);
-            int zend = std::min(int((tmax.z - bbmin.z) / cap.z), slice[2] - 1);
-            for (int i = xstart; i <= xend; ++i) {
-                for (int j = ystart; j <= yend; ++j) {
-                    for (int k = zstart; k <= zend; ++k) {
-                        vector<vec3> points = clipTriangle(tri, voxels[i][j][k].bmin, voxels[i][j][k].bmax);
-                        if (points.size() >= 3) {
-                            for (auto p : points) {
-                                assert(inBox(p, voxels[i][j][k].bmin, voxels[i][j][k].bmax));
-                            }
-                            for (int p = 1; p <= points.size() - 2; ++p) {
-                                vec3 clipTri[3] = { points[0], points[p], points[p + 1] };
-                                voxels[i][j][k].fit.addTraingleSGGX(clipTri, voxels[i][j][k].quadric);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    for (int i = 0; i < slice[0]; ++i) {
-        for (int j = 0; j < slice[1]; ++j) {
-            for (int k = 0; k < slice[2]; ++k) {
-                auto& voxel = voxels[i][j][k];
-                if (voxel.fit.vertices > 0) {
-                    voxel.sggx = voxel.fit.fitSGGX();
+                    voxel.alpha = voxel.fit.fitAlpha(voxel.quadric, voxel.bmin, voxel.bmax);
+                    //voxel.alpha = 1.f;
+                    out << ' ' << voxel.alpha << endl;
+                    voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
+                    //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
                 }
             }
         }

@@ -10,7 +10,7 @@ struct Voxel {
     Quadric quadric;
     SGGX sggx;
     vec3 bmin, bmax;
-    float density;
+    float alpha;
 };
 
 struct VoxelLayer {
@@ -19,16 +19,16 @@ struct VoxelLayer {
     vector<vector<vector<Voxel>>> voxels;
     vector<Mesh> meshes;
 
-    VoxelLayer(string meshFile, ivec3 slice);
+    VoxelLayer(string meshFile, int s);
 
-    void loadFromObj(string meshFile);
+    void loadFromObj(string meshFile, int s);
 
-    void loadFromGltf(string meshFile);
+    void loadFromGltf(string meshFile, int s);
 
     void processMesh(tinygltf::Model& model, tinygltf::Mesh& mesh, mat4 M);
 
     void processNode(tinygltf::Model& model, tinygltf::Node& node, mat4 M);
 
-    void handleMeshes();
+    void handleMeshes(int s);
 
 };

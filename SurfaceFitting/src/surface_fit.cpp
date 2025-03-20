@@ -6,11 +6,11 @@ using namespace std;
 
 void QuadricFit::addPoint(const dvec3& p, double w) {
 	vertices++;
-	double prevWeightSum = weightSum;
+	//double prevWeightSum = weightSum;
 	weightSum += w;
-	M *= prevWeightSum / weightSum;
-	N *= prevWeightSum / weightSum;
-	w /= weightSum;
+	//M *= prevWeightSum / weightSum;
+	//N *= prevWeightSum / weightSum;
+	//w /= weightSum;
 	double x = p.x, y = p.y, z = p.z;
 	double c[10] = {
 		x*x, y*y, z*z,
@@ -37,10 +37,13 @@ const double dunavantX[6] = {0.10810301816807, 0.445948490915965, 0.445948490915
 const double dunavantY[6] = {0.445948490915965, 0.445948490915965, 0.10810301816807, 0.091576213509771007, 0.091576213509771007, 0.81684757298045896};
 
 void QuadricFit::addTriangle(const vec3 tri[3]) {
+	triangles.push_back({ tri[0], tri[1], tri[2] });
 	dvec3 dtri[3] = { dvec3(tri[0]), dvec3(tri[1]), dvec3(tri[2]) };
 	dvec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
 	dvec3 n = cross(e1, e2);
 	double area = length(n) / 2.f;
+	if (area <= 1e-6f)
+		return;
 	n = normalize(n);
 	// Fitting Quadric
 	for (int i = 0; i < 6; ++i) {
@@ -142,7 +145,9 @@ bool QuadricFit::lineSearch(VectorXd c1, VectorXd c2, double& t) const {
 
 Quadric QuadricFit::fitQuadric() const {
 	GeneralizedEigenSolver<MatrixXd> ges;
-	ges.compute(M, N);
+	MatrixXd wM = M / weightSum, wN = N / weightSum;
+	//ges.compute(M, N);
+	ges.compute(wM, wN);
 	auto alphas = ges.alphas();
 	auto betas = ges.betas();
 	int minCol = -1, secCol = -1;
@@ -176,13 +181,17 @@ Quadric QuadricFit::fitQuadric() const {
 	//float var = vc.transpose() * M * vc;
 	//float var = minVal * vc.transpose() * N * vc;
 	//return Quadric(c, sqrt(var));
+	if (secCol == -1) {
+		secCol = minCol;
+	}
 	VectorXd minC = ges.eigenvectors().col(minCol).real();
 	VectorXd secC = ges.eigenvectors().col(secCol).real();
 	if (isEllipsoid(minC)) {
 		for (int i = 0; i < 10; ++i) {
 			c[i] = minC(i);
 		}
-		double var = minC.transpose() * M * minC;
+		//double var = minC.transpose() * M * minC;
+		double var = minC.transpose() * wM * minC;
 		if (var < 0) {
 			return Quadric(c, FLT_EPSILON);
 		}
@@ -195,7 +204,8 @@ Quadric QuadricFit::fitQuadric() const {
 		for (int i = 0; i < 10; ++i) {
 			c[i] = vc(i);
 		}
-		double var = vc.transpose() * M * vc;
+		//double var = vc.transpose() * M * vc;
+		double var = vc.transpose() * wM * vc;
 		if (var < 0) {
 			return Quadric(c, FLT_EPSILON);
 		}
@@ -206,7 +216,8 @@ Quadric QuadricFit::fitQuadric() const {
 	NN(0, 0) = NN(1, 1) = NN(2, 2) = -1;
 	NN(0, 1) = NN(1, 0) = NN(0, 2) = NN(2, 0) = NN(1, 2) = NN(2, 1) = 1;
 	NN(3, 3) = NN(4, 4) = NN(5, 5) = -1;
-	ges.compute(M, NN);
+	//ges.compute(M, NN);
+	ges.compute(wM, NN);
 	alphas = ges.alphas();
 	betas = ges.betas();
 	secCol = -1;
@@ -233,7 +244,8 @@ Quadric QuadricFit::fitQuadric() const {
 		for (int i = 0; i < 10; ++i) {
 			c[i] = vc[i];
 		}
-		double var = vc.transpose() * M * vc;
+		//double var = vc.transpose() * M * vc;
+		double var = vc.transpose() * wM * vc;
 		if (var < 0) {
 			return Quadric(c, FLT_EPSILON);
 		}
@@ -243,71 +255,120 @@ Quadric QuadricFit::fitQuadric() const {
 		c[i] = secC(i);
 	}
 	//cout << 3 << endl;
-	double var = secC.transpose() * M * secC;
+	//double var = secC.transpose() * M * secC;
+	double var = secC.transpose() * wM * secC;
 	if (var < 0) {
 		return Quadric(c, FLT_EPSILON);
 	}
 	return Quadric(c, sqrt(var));
 }
 
-void coordinateSystem(const vec3 &a, vec3 &b, vec3 &c) {
-	if (a.x == 0 && a.y == 0) {
-		b = vec3(1, 0, 0);
-		c = vec3(0, 1, 0);
-	} else {
-		b = vec3(a.y, -a.x, 0);
-		c = normalize(cross(a, b));
-	}
+void coordinateSystem(const vec3 &n, vec3 &s, vec3 &t) {
+	float si = sign(n.z);
+	float a = -1.f / (si + n.z);
+	float b = n.x * n.y * a;
+	s = vec3(1.f + si * n.x * n.x * a, si * b, -si * n.x);
+	t = vec3(b, si + n.y * n.y * a, -n.y);
 }
 
-void QuadricFit::addTraingleSGGX(const vec3 tri[3], const Quadric& q) {
-	vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
-	vec3 n = cross(e1, e2);
-	double area = length(n) / 2.f;
-	n = normalize(n);
-	vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f));
-	vec3 s, t;
-	coordinateSystem(qn, s, t);
-	n = vec3(dot(n, s), dot(n, t), dot(n, qn));
+SGGX QuadricFit::fitSGGX(const Quadric& q) const {
+	mat3 S(0.f);
+	float normalWeightSum = 0.f;
+	for (auto& tri : triangles) {
+		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
+		vec3 n = cross(e1, e2);
+		float area = length(n) / 2.f;
+		n = normalize(n);
+		vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f)), s, t;
+		coordinateSystem(qn, s, t);
+		n = vec3(dot(s, n), dot(t, n), dot(qn, n));
 
-	double prevNormalWeightSum = normalWeightSum;
-	normalWeightSum += area;
-	SigmaNormal *= prevNormalWeightSum / normalWeightSum;
-	double wNormal = area / normalWeightSum;
+		S[0][0] += area * glm::clamp(n.x, 0.f, 1.f);
+		S[0][0] += area * glm::clamp(-n.x, 0.f, 1.f);
+		S[0][0] += area * glm::clamp(n.y, 0.f, 1.f);
+		S[0][0] += area * glm::clamp(-n.y, 0.f, 1.f);
+
+		S[1][1] += area * glm::clamp(n.x, 0.f, 1.f);
+		S[1][1] += area * glm::clamp(-n.x, 0.f, 1.f);
+		S[1][1] += area * glm::clamp(n.y, 0.f, 1.f);
+		S[1][1] += area * glm::clamp(-n.y, 0.f, 1.f);
+
+		//S[2][2] += 2.f * area * glm::clamp(n.z, 0.f, 1.f);
+		//S[2][2] += 2.f * area * glm::clamp(-n.z, 0.f, 1.f);
+		S[2][2] += 4.f * area;
+
+		normalWeightSum += 4.f * area;
+	}
+	S /= normalWeightSum;
 	for (int i = 0; i < 3; ++i) {
-		for (int j = 0; j < 3; ++j) {
-			SigmaNormal(i, j) += wNormal * n[i] * n[j];
+		S[i][i] *= S[i][i];
+		if (isnan(S[i][i])) {
+			cout << "shit" << endl;
 		}
 	}
-	normals.push_back({ area, n });
-}
-
-SGGX QuadricFit::fitSGGX() const {
-	//cout << SigmaNormal << endl << endl;
-	SelfAdjointEigenSolver<Matrix3d> saes;
-	saes.compute(SigmaNormal);
-	mat3 omegas;
-	vec3 sigma(0.f);
-	float ws = 0;
-	for (int i = 0; i < normals.size(); ++i) {
-		ws += normals[i].first;
-	}
-	for (int i = 0; i < 3; ++i) {
-		Vector3d omega = saes.eigenvectors().col(i);
-		omegas[i] = vec3(omega.x(), omega.y(), omega.z());
-		//sigma[i] = dot(normalSum, omegas[i]);
-		for (int j = 0; j < normals.size(); ++j) {
-			//sigma[i] += normals[j].first * glm::clamp(dot(normals[j].second, omegas[i]), 0.f, 1.f);
-			sigma[i] += normals[j].first * fabs(dot(normals[j].second, omegas[i]));
-		}
-		sigma[i] /= ws;
-	}
-	mat3 diag(0.f);
-	for (int i = 0; i < 3; ++i) {
-		//cout << sigma[i] << ' ';
-		diag[i][i] = sigma[i] * sigma[i];
-	}
-	//cout << endl;
-	mat3 S = omegas * diag * transpose(omegas);
 	return SGGX(S);
+}
+
+const int AREA_SAMPLES = 256;
+
+float QuadricFit::fitAlpha(const Quadric& q, const vec3& bmin, const vec3& bmax) const {
+	float triAreaSum = 0.f, surfArea = 0.f;
+	for (auto& tri : triangles) {
+		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
+		vec3 n = cross(e1, e2);
+		float area = length(n) / 2.f;
+		n = normalize(n);
+		vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f));
+		area *= abs(dot(qn, n));
+		triAreaSum += area;
+	}
+	vec3 cap = bmax - bmin;
+	float pdf = 1.f / (cap.x * cap.y);
+	for (int i = 0; i < AREA_SAMPLES; ++i) {
+		float x = bmin.x + cap.x * rand() / RAND_MAX;
+		float y = bmin.y + cap.y * rand() / RAND_MAX;
+		//float x = bmin.x + cap.x * (i / 16) / 16.f;
+		//float y = bmin.y + cap.y * (i % 16) / 16.f;
+		float a = q.c[2], b = q.c[4] * x + q.c[5] * y + q.c[8], c = q.f(vec3(x, y, 0));
+		float delta = b * b - 4 * a * c;
+		vec3 p(x, y, 0);
+		if (delta > FLT_EPSILON) {
+			float upProb = rand() / RAND_MAX;
+			if (upProb < .5f) {
+				p.z = (-b + sqrt(delta)) / (2 * a);
+				if (inBox(p, bmin, bmax)) {
+					vec3 dF = q.df(p);
+					if (dF.z != 0.f) {
+						float fx = -dF.x / dF.z;
+						float fy = -dF.y / dF.z;
+						surfArea += sqrt(1 + fx * fx + fy * fy) / (pdf * .5f);
+					}
+				}
+			} else {
+				p.z = (-b - sqrt(delta)) / (2 * a);
+				if (inBox(p, bmin, bmax)) {
+					vec3 dF = q.df(p);
+					if (dF.z != 0.f) {
+						float fx = -dF.x / dF.z;
+						float fy = -dF.y / dF.z;
+						surfArea += sqrt(1 + fx * fx + fy * fy) / (pdf * .5f);
+					}
+				}
+			}
+		} else if (delta >= -FLT_EPSILON) {
+			p.z = (-b) / (2 * a);
+			if (inBox(p, bmin, bmax)) {
+				vec3 dF = q.df(p);
+				if (dF.z != 0.f) {
+					float fx = -dF.x / dF.z;
+					float fy = -dF.y / dF.z;
+					surfArea += sqrt(1 + fx * fx + fy * fy) / pdf;
+				}
+			}
+		}
+	}
+	surfArea /= 1.f * AREA_SAMPLES;
+	if (surfArea == 0.f)
+		return 0.f;
+	return triAreaSum / surfArea;
 }

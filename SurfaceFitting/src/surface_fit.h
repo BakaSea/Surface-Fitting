@@ -61,20 +61,18 @@ struct QuadricFit {
 	MatrixXd M, N;
 	Matrix3d SigmaNormal;
 	double weightSum;
-	double normalWeightSum;
 	int vertices;
 	double areaSum;
-	std::vector<std::pair<double, vec3>> normals;
+	std::vector<mat3> triangles;
 
 	QuadricFit() {
 		M = MatrixXd::Zero(10, 10);
 		N = MatrixXd::Zero(10, 10);
 		SigmaNormal = Matrix3d::Zero();
 		weightSum = 0.f;
-		normalWeightSum = 0;
 		vertices = 0;
 		areaSum = 0;
-		normals.clear();
+		triangles.clear();
 	}
 
 	void addPoint(const dvec3& p, double w);
@@ -82,8 +80,10 @@ struct QuadricFit {
 	void addTriangle(const vec3 tri[3]);
 
 	double getTaubinErr(const VectorXd& c) const {
-		double mSum = c.transpose() * M * c;
-		double nSum = c.transpose() * N * c;
+		//double mSum = c.transpose() * M * c;
+		//double nSum = c.transpose() * N * c;
+		double mSum = c.transpose() * M / weightSum * c;
+		double nSum = c.transpose() * N / weightSum * c;
 		return mSum / nSum;
 	}
 
@@ -91,9 +91,9 @@ struct QuadricFit {
 
 	Quadric fitQuadric() const;
 
-	void addTraingleSGGX(const vec3 tri[3], const Quadric& q);
+	SGGX fitSGGX(const Quadric& q) const;
 
-	SGGX fitSGGX() const;
+	float fitAlpha(const Quadric& q, const vec3& bmin, const vec3& bmax) const;
 
 };
 
