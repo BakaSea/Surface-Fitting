@@ -1,56 +1,59 @@
 import numpy as np
-import matplotlib.pyplot as plt
+
+SAMPLES = 1
+
+def f(q, x, y, z):
+    return q[0]*x**2+q[1]*y**2+q[2]*z**2+q[3]*x*y+q[4]*x*z+q[5]*y*z+q[6]*x+q[7]*y+q[8]*z+q[9]
+
+def df(q, x, y, z):
+    return [
+        2*q[0]*x+q[3]*y+q[4]*z+q[6],
+        2*q[1]*y+q[3]*x+q[5]*z+q[7],
+        2*q[2]*z+q[4]*x+q[5]*y+q[8]
+    ]
+
+def inBox(x, y, z, bmin, bmax):
+    return bmin[0] <= x <= bmax[0] and bmin[1] <= y <= bmax[1] and bmin[2] <= z <= bmax[2]
 
 
-def clip_tri(tri, bmin, bmax):
-    res = tri
-    for j in range(3):
-        p = res
-        size = len(p)
-        res = []
-        for i in range(size):
-            e = p[(i+1)%size]-p[i]
-            if e[j] != 0:
-                t = (bmin[j]-p[i][j])/e[j]
-                if 1e-5 < t < 1-(1e-5):
-                    print(t)
-                    res.append(p[i]+t*e)
-            if p[(i+1)%size][j] >= bmin[j]:
-                res.append(p[(i+1)%size])
-        p = res
-        size = len(p)
-        res = []
-        for i in range(size):
-            e = p[(i+1)%size]-p[i]
-            if e[j] != 0:
-                t = (bmax[j]-p[i][j])/e[j]
-                if 1e-5 < t < 1-(1e-5):
-                    print(t)
-                    res.append(p[i]+t*e)
-            if p[(i+1)%size][j] <= bmax[j]:
-                res.append(p[(i+1)%size])
-    return res
+# 0.729442 -1.02404 -1.51076 1.76856 0.0150725 -0.47164
+# -0.164194 -0.315978 -0.16442 -0.0445044 0.000491966 0.0448935 0.357741 -0.543732 -0.272597 -0.586716
+# 0.0185703 0.0219449
 
+q = np.asarray([-0.164194, -0.315978, -0.16442, -0.0445044, 0.000491966, 0.0448935, 0.357741, -0.543732, -0.272597, -0.586716 ])
+bmin = np.asarray([0.729442, -1.02404, -1.51076])
+bmax = np.asarray([1.76856, 0.0150725, -0.47164])
 
-tri = np.asarray([[-0.261364996, 0.678849936, -0.00768499961], [-0.261579990, 0.673545003, -0.0120099997], [-0.265699983, 0.675300002, -0.0140099991]])
-print(tri[0], tri[1], tri[2])
-points = np.asarray(clip_tri(tri, [-0.278826237, 0.550770044, -0.00768500566], [-0.0843024999, 0.743587494, 0.143057480]))
-for i in range(len(points)):
-    print(points[i])
-faces = []
-if len(points) >= 3:
-    for i in np.arange(len(points)-2)+1:
-        faces.append([0, i, i+1])
-
-
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.set_xlim(-0.278826237, -0.0843024999)
-ax.set_ylim(0.550770044, 0.743587494)
-ax.set_zlim(-0.00768500566, 0.143057480)
-ax.plot_trisurf(tri[:, 0], tri[:, 1], [[0, 1, 2]], tri[:, 2], alpha=0.5)
-if len(points) >= 3:
-    ax.scatter(points[:, 0], points[:, 1], points[:, 2], color='orange')
-    ax.plot_trisurf(points[:, 0], points[:, 1], faces, points[:, 2])
-
-plt.show()
+X = np.random.rand(SAMPLES)
+Y = np.random.rand(SAMPLES)
+sum = 0
+cap = bmax-bmin
+pdf = 1/(cap[0]*cap[1])
+for i in np.arange(SAMPLES):
+    x = bmin[0]+X[i]*cap[0]
+    y = bmin[1]+Y[i]*cap[1]
+    x = 1.40190196
+    y = -0.746403694
+    a = q[2]
+    b = q[4]*x+q[5]*y+q[8]
+    c = f(q, x, y, 0)
+    print(a, b, c)
+    delta = b**2-4*a*c
+    if delta > 0:
+        if np.random.rand(1) < 0.5:
+            z = (-b+np.sqrt(delta))/(2*a)
+        else:
+            z = (-b-np.sqrt(delta))/(2*a)
+        print(x, y, z)
+        if inBox(x, y, z, bmin, bmax):
+            dfxyz = df(q, x, y, z)
+            if dfxyz[2] != 0:
+                fx = -dfxyz[0] / dfxyz[2]
+                fy = -dfxyz[1] / dfxyz[2]
+                print(dfxyz)
+                print(fx, fy)
+                sum += np.sqrt(1 + fx ** 2 + fy ** 2) / (pdf * 0.5)
+                print(sum)
+sum /= SAMPLES
+print(sum)
+print(cap[0]*cap[1])

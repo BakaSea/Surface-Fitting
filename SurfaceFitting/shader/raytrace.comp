@@ -336,8 +336,8 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     //     +voxel.hullQ[3]*(r.o.x*r.d.y+r.o.y*r.d.x)+voxel.hullQ[4]*(r.o.x*r.d.z+r.o.z*r.d.x)+voxel.hullQ[5]*(r.o.y*r.d.z+r.o.z*r.d.y)
     //     +voxel.hullQ[6]*r.d.x+voxel.hullQ[7]*r.d.y+voxel.hullQ[8]*r.d.z;
     // float c = f(voxel.hullQ, r.o);
-    //float sigma = voxel.sigma;
-    float sigma = 0.00001f;
+    float sigma = voxel.sigma;
+    //float sigma = 0.00001f;
     IntersectResult res;
     res.idx = -1;
     float upSol = getMinimumQuadraticSolution(r, a, b, c-3.f*sigma, tMin, tMax, bmin, bmax);
@@ -435,9 +435,9 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            return vec3(tMax);
-            //VoxelData voxel = voxels[r.medium];
-            //return vec3(voxel.alpha);
+            // return vec3(tMax);
+            // VoxelData voxel = voxels[r.medium];
+            // return vec3(voxel.alpha);
             // SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
             // vec3 n = normalize(df(voxel.q, r.o));
             // Frame f = coordinateSystem(n);

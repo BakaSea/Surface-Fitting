@@ -293,19 +293,19 @@ SGGX QuadricFit::fitSGGX(const Quadric& q) const {
 		S[1][1] += area * glm::clamp(n.y, 0.f, 1.f);
 		S[1][1] += area * glm::clamp(-n.y, 0.f, 1.f);
 
-		//S[2][2] += 2.f * area * glm::clamp(n.z, 0.f, 1.f);
-		//S[2][2] += 2.f * area * glm::clamp(-n.z, 0.f, 1.f);
-		S[2][2] += 4.f * area;
+		S[2][2] += 2.f * area * glm::clamp(n.z, 0.f, 1.f);
+		S[2][2] += 2.f * area * glm::clamp(-n.z, 0.f, 1.f);
+		//S[2][2] += 4.f * area;
 
 		normalWeightSum += 4.f * area;
 	}
 	S /= normalWeightSum;
 	for (int i = 0; i < 3; ++i) {
 		S[i][i] *= S[i][i];
-		if (isnan(S[i][i])) {
-			cout << "shit" << endl;
-		}
 	}
+	//S = mat3(1.f);
+	//S[0][0] = .1f;
+	//S[1][1] = .1f;
 	return SGGX(S);
 }
 
@@ -327,42 +327,22 @@ float QuadricFit::fitAlpha(const Quadric& q, const vec3& bmin, const vec3& bmax)
 	for (int i = 0; i < AREA_SAMPLES; ++i) {
 		float x = bmin.x + cap.x * rand() / RAND_MAX;
 		float y = bmin.y + cap.y * rand() / RAND_MAX;
-		//float x = bmin.x + cap.x * (i / 16) / 16.f;
-		//float y = bmin.y + cap.y * (i % 16) / 16.f;
 		float a = q.c[2], b = q.c[4] * x + q.c[5] * y + q.c[8], c = q.f(vec3(x, y, 0));
 		float delta = b * b - 4 * a * c;
 		vec3 p(x, y, 0);
-		if (delta > FLT_EPSILON) {
-			float upProb = rand() / RAND_MAX;
+		if (delta > 0.f) {
+			float upProb = 1.f * rand() / RAND_MAX;
 			if (upProb < .5f) {
 				p.z = (-b + sqrt(delta)) / (2 * a);
-				if (inBox(p, bmin, bmax)) {
-					vec3 dF = q.df(p);
-					if (dF.z != 0.f) {
-						float fx = -dF.x / dF.z;
-						float fy = -dF.y / dF.z;
-						surfArea += sqrt(1 + fx * fx + fy * fy) / (pdf * .5f);
-					}
-				}
 			} else {
 				p.z = (-b - sqrt(delta)) / (2 * a);
-				if (inBox(p, bmin, bmax)) {
-					vec3 dF = q.df(p);
-					if (dF.z != 0.f) {
-						float fx = -dF.x / dF.z;
-						float fy = -dF.y / dF.z;
-						surfArea += sqrt(1 + fx * fx + fy * fy) / (pdf * .5f);
-					}
-				}
 			}
-		} else if (delta >= -FLT_EPSILON) {
-			p.z = (-b) / (2 * a);
 			if (inBox(p, bmin, bmax)) {
 				vec3 dF = q.df(p);
 				if (dF.z != 0.f) {
 					float fx = -dF.x / dF.z;
 					float fy = -dF.y / dF.z;
-					surfArea += sqrt(1 + fx * fx + fy * fy) / pdf;
+					surfArea += sqrt(1.f + fx * fx + fy * fy) / (pdf * .5f);
 				}
 			}
 		}

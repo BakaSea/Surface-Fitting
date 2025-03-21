@@ -27,7 +27,7 @@ struct Quadric {
 	}
 
 	vec3 df(const vec3& p) const {
-		float x = p.z, y = p.y, z = p.z;
+		float x = p.x, y = p.y, z = p.z;
 		return vec3(2.f * c[0] * x + c[3] * y + c[4] * z + c[6],
 			2.f * c[1] * y + c[3] * x + c[5] * z + c[7],
 			2.f * c[2] * z + c[4] * x + c[5] * y + c[8]);
