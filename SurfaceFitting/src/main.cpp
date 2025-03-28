@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "shader_m.h"
 #include "shader_c.h"
+#include "octree.h"
 #include "voxel_handle.h"
 #include "mesh.h"
 //#include "quadricfitting.h"
@@ -150,37 +151,65 @@ int main(int argc, char **argv) {
 
     VoxelLayer layer(meshfile, slice);
 
-    for (int i = 0; i < layer.slice.x; ++i) {
-        for (int j = 0; j < layer.slice.y; ++j) {
-            for (int k = 0; k < layer.slice.z; ++k) {
-                auto& voxel = layer.voxels[i][j][k];
-                if (voxel.fit.vertices > 0) {
-                    VoxelData vd;
-                    memcpy(vd.q, voxel.quadric.c, sizeof(voxel.quadric.c));
-                    //memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
-                    vd.sggx[0] = voxel.sggx.S_xx;
-                    vd.sggx[1] = voxel.sggx.S_xy;
-                    vd.sggx[2] = voxel.sggx.S_xz;
-                    vd.sggx[3] = voxel.sggx.S_yy;
-                    vd.sggx[4] = voxel.sggx.S_yz;
-                    vd.sggx[5] = voxel.sggx.S_zz;
-                    for (int d = 0; d < 3; ++d) {
-                        vd.bmin[d] = voxel.bmin[d];
-                        vd.bmax[d] = voxel.bmax[d];
-                    }
-                    vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
-                    vd.sigma = voxel.quadric.sigma;
-                    //vd.sigma = 0.001f;
-                    vd.alpha = voxel.alpha;
-                    voxelDatas.emplace_back(vd);
-                }
-            }
+    //for (int i = 0; i < layer.slice.x; ++i) {
+    //    for (int j = 0; j < layer.slice.y; ++j) {
+    //        for (int k = 0; k < layer.slice.z; ++k) {
+    //            auto& voxel = layer.voxels[i][j][k];
+    //            if (voxel.fit.vertices > 0) {
+    //                VoxelData vd;
+    //                memcpy(vd.q, voxel.quadric.c, sizeof(voxel.quadric.c));
+    //                //memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
+    //                vd.sggx[0] = voxel.sggx.S_xx;
+    //                vd.sggx[1] = voxel.sggx.S_xy;
+    //                vd.sggx[2] = voxel.sggx.S_xz;
+    //                vd.sggx[3] = voxel.sggx.S_yy;
+    //                vd.sggx[4] = voxel.sggx.S_yz;
+    //                vd.sggx[5] = voxel.sggx.S_zz;
+    //                for (int d = 0; d < 3; ++d) {
+    //                    vd.bmin[d] = voxel.bmin[d];
+    //                    vd.bmax[d] = voxel.bmax[d];
+    //                }
+    //                vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
+    //                vd.sigma = voxel.quadric.sigma;
+    //                //vd.sigma = 0.001f;
+    //                vd.alpha = voxel.alpha;
+    //                voxelDatas.emplace_back(vd);
+    //            }
+    //        }
+    //    }
+    //}
+
+    voxelDatas.resize(layer.octree.voxels.size());
+    for (int i = 0; i < voxelDatas.size(); ++i) {
+        Voxel& voxel = layer.octree.voxels[i];
+        VoxelData& vd = voxelDatas[i];
+        memcpy(vd.q, voxel.quadric.c, sizeof(voxel.quadric.c));
+        //memcpy(vd.hullQ, voxel.hullQ, sizeof(voxel.hullQ));
+        vd.sggx[0] = voxel.sggx.S_xx;
+        vd.sggx[1] = voxel.sggx.S_xy;
+        vd.sggx[2] = voxel.sggx.S_xz;
+        vd.sggx[3] = voxel.sggx.S_yy;
+        vd.sggx[4] = voxel.sggx.S_yz;
+        vd.sggx[5] = voxel.sggx.S_zz;
+        for (int d = 0; d < 3; ++d) {
+            vd.bmin[d] = voxel.bmin[d];
+            vd.bmax[d] = voxel.bmax[d];
         }
+        vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
+        vd.sigma = voxel.quadric.sigma;
+        //vd.sigma = 0.001f;
+        vd.alpha = voxel.alpha;
     }
+
     GLuint voxelDatasBuffer;
     glCreateBuffers(1, &voxelDatasBuffer);
-    glNamedBufferStorage(voxelDatasBuffer, sizeof(VoxelData)* voxelDatas.size(), (const void*)voxelDatas.data(), GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(voxelDatasBuffer, sizeof(VoxelData) * voxelDatas.size(), (const void*)voxelDatas.data(), GL_DYNAMIC_STORAGE_BIT);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, voxelDatasBuffer);
+
+    GLuint octreeNodesBuffer;
+    glCreateBuffers(1, &octreeNodesBuffer);
+    glNamedBufferStorage(octreeNodesBuffer, sizeof(OctreeNode) * layer.octree.nodes.size(), (const void*)layer.octree.nodes.data(), GL_DYNAMIC_STORAGE_BIT);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, octreeNodesBuffer);
 
     int currentSample = 1;
     // render loop
@@ -210,6 +239,7 @@ int main(int argc, char **argv) {
             rtCompShader.setVec3("cameraPos", camera.Position);
             rtCompShader.setVec2("resolution", vec2(SCR_WIDTH, SCR_HEIGHT));
             rtCompShader.setInt("voxelSize", voxelDatas.size());
+            rtCompShader.setInt("octreeLayer", layer.octree.layers);
             if (moved) {
                 currentSample = 1;
                 glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, NULL);

@@ -212,18 +212,24 @@ void VoxelLayer::handleMeshes(int s) {
     for (int i = 0; i < 3; ++i) {
         slice[i] = ceil((bbmax[i] - bbmin[i]) / cap[i]);
     }
-    voxels = vector<vector<vector<Voxel>>>(slice.x, vector<vector<Voxel>>(slice.y, vector<Voxel>(slice.z)));
     cout << slice.x << ' ' << slice.y << ' ' << slice.z << endl;
+    int maxSlice = std::max(slice.x, std::max(slice.y, slice.z));
+    int layers = ceil(std::log2(maxSlice));
+    slice = ivec3(1 << layers);
+    bbmax = bbmin + vec3(slice) * cap;
+    octree = buildOctree(bbmin, bbmax, layers);
+    cout << slice.x << ' ' << slice.y << ' ' << slice.z << endl;
+    //voxels = vector<vector<vector<Voxel>>>(slice.x, vector<vector<Voxel>>(slice.y, vector<Voxel>(slice.z)));
 
     double startTime = glfwGetTime();
-    for (int i = 0; i < slice[0]; ++i) {
-        for (int j = 0; j < slice[1]; ++j) {
-            for (int k = 0; k < slice[2]; ++k) {
-                /*voxels[i][j][k].fit.bmin = */voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
-                /*voxels[i][j][k].fit.bmax = */voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap - vec3(1e-4f);
-            }
-        }
-    }
+    //for (int i = 0; i < slice[0]; ++i) {
+    //    for (int j = 0; j < slice[1]; ++j) {
+    //        for (int k = 0; k < slice[2]; ++k) {
+    //            /*voxels[i][j][k].fit.bmin = */voxels[i][j][k].bmin = bbmin + vec3(i, j, k) * cap;
+    //            /*voxels[i][j][k].fit.bmax = */voxels[i][j][k].bmax = bbmin + vec3(i + 1, j + 1, k + 1) * cap - vec3(1e-4f);
+    //        }
+    //    }
+    //}
 
     for (auto& mesh : meshes) {
         for (int t = 0; t < mesh.indices.size(); t += 3) {
@@ -238,14 +244,19 @@ void VoxelLayer::handleMeshes(int s) {
             for (int i = xstart; i <= xend; ++i) {
                 for (int j = ystart; j <= yend; ++j) {
                     for (int k = zstart; k <= zend; ++k) {
-                        vector<vec3> points = clipTriangle(tri, voxels[i][j][k].bmin, voxels[i][j][k].bmax);
+                        vec3 bmin = bbmin + vec3(i, j, k) * cap;
+                        vec3 bmax = bmin + cap;
+                        //vector<vec3> points = clipTriangle(tri, voxels[i][j][k].bmin, voxels[i][j][k].bmax);
+                        vector<vec3> points = clipTriangle(tri, bmin, bmax);
                         if (points.size() >= 3) {
                             for (auto p : points) {
-                                assert(inBox(p, voxels[i][j][k].bmin, voxels[i][j][k].bmax));
+                                //assert(inBox(p, voxels[i][j][k].bmin, voxels[i][j][k].bmax));
+                                assert(inBox(p, bmin, bmax));
                             }
                             for (int p = 1; p <= points.size() - 2; ++p) {
                                 vec3 clipTri[3] = { points[0], points[p], points[p + 1] };
-                                voxels[i][j][k].fit.addTriangle(clipTri);
+                                octree.getVoxel(layers, (bmin + bmax) / 2.f).fit.addTriangle(clipTri);
+                                //voxels[i][j][k].fit.addTriangle(clipTri);
                             }
                         }
                         //voxels[i][j][k].fit.addTriangle(tri);
@@ -256,27 +267,46 @@ void VoxelLayer::handleMeshes(int s) {
     }
 
     ofstream out("param.txt");
-    for (int i = 0; i < slice[0]; ++i) {
-        for (int j = 0; j < slice[1]; ++j) {
-            for (int k = 0; k < slice[2]; ++k) {
-                auto& voxel = voxels[i][j][k];
-                if (voxel.fit.vertices > 0) {
-                    //cout << "Fit " << i << ' ' << j << ' ' << k << endl;
-                    voxel.quadric = voxel.fit.fitQuadric();
-                    out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
-                    for (int q = 0; q < 10; ++q) {
-                        out << ' ' << voxel.quadric.c[q];
-                    }
-                    out << ' ' << voxel.quadric.sigma;
-                    //voxel.quadric.sigma = 1e-5f;
-                    //voxel.sggx = voxel.fit.fitSGGX();
-                    voxel.alpha = voxel.fit.fitAlpha(voxel.quadric, voxel.bmin, voxel.bmax);
-                    //voxel.alpha = 1.f;
-                    out << ' ' << voxel.alpha << endl;
-                    voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
-                    //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
-                }
+    //for (int i = 0; i < slice[0]; ++i) {
+    //    for (int j = 0; j < slice[1]; ++j) {
+    //        for (int k = 0; k < slice[2]; ++k) {
+    //            auto& voxel = voxels[i][j][k];
+    //            if (voxel.fit.vertices > 0) {
+    //                //cout << "Fit " << i << ' ' << j << ' ' << k << endl;
+    //                voxel.quadric = voxel.fit.fitQuadric();
+    //                out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
+    //                for (int q = 0; q < 10; ++q) {
+    //                    out << ' ' << voxel.quadric.c[q];
+    //                }
+    //                out << ' ' << voxel.quadric.sigma;
+    //                //voxel.quadric.sigma = 1e-5f;
+    //                //voxel.sggx = voxel.fit.fitSGGX();
+    //                voxel.alpha = voxel.fit.fitAlpha(voxel.quadric, voxel.bmin, voxel.bmax);
+    //                //voxel.alpha = 1.f;
+    //                out << ' ' << voxel.alpha << endl;
+    //                voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
+    //                //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
+    //            }
+    //        }
+    //    }
+    //}
+
+    for (Voxel& voxel : octree.voxels) {
+        if (voxel.fit.vertices > 0) {
+            //cout << "Fit " << i << ' ' << j << ' ' << k << endl;
+            voxel.quadric = voxel.fit.fitQuadric();
+            out << voxel.bmin[0] << ' ' << voxel.bmin[1] << ' ' << voxel.bmin[2] << ' ' << voxel.bmax[0] << ' ' << voxel.bmax[1] << ' ' << voxel.bmax[2];
+            for (int q = 0; q < 10; ++q) {
+                out << ' ' << voxel.quadric.c[q];
             }
+            out << ' ' << voxel.quadric.sigma;
+            //voxel.quadric.sigma = 1e-5f;
+            //voxel.sggx = voxel.fit.fitSGGX();
+            voxel.alpha = voxel.fit.fitAlpha(voxel.quadric, voxel.bmin, voxel.bmax);
+            //voxel.alpha = 1.f;
+            out << ' ' << voxel.alpha << endl;
+            voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
+            //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
         }
     }
 

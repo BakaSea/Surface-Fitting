@@ -11,6 +11,18 @@ uniform vec3 cameraPos;
 vec3 lightPos = vec3(1.f, 1.f, 1.f);
 vec3 lightI = vec3(10.f);
 
+vec3 F() {
+    return vec3(0.f);
+}
+
+float D(vec3 wm) {
+    return 0.f;
+}
+
+float G() {
+    return 0.f;
+}
+
 void main() {
     //vec3 N = normalize(worldNormal);
     vec3 N = worldNormal;

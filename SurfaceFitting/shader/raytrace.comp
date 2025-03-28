@@ -3,6 +3,7 @@
 #define M_PI 3.14159265358979323846
 #define INV4PI 0.07957747154594766788
 #define EPS 1e-4
+#define MAX_LAYERS 20
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
@@ -16,10 +17,21 @@ struct VoxelData {
     float alpha;
 };
 
+struct OctreeNode {
+    vec3 bmin;
+    vec3 bmax;
+    int children[8];
+    int voxelId; 
+};
+
 layout (rgba32f, binding = 0) uniform image2D imgOutput;
 
-layout (std430, binding = 1) readonly buffer ssbo {
+layout (std430, binding = 1) readonly buffer ssboVoxel {
     VoxelData voxels[];
+};
+
+layout (std430, binding = 2) readonly buffer ssboOctree {
+    OctreeNode octreeNodes[];
 };
 
 uniform mat4 viewInv;
@@ -27,6 +39,7 @@ uniform mat4 projectionInv;
 uniform vec3 cameraPos;
 uniform vec2 resolution;
 uniform int voxelSize;
+uniform int octreeLayer;
 uniform int currentSample;
 
 struct Ray {
@@ -323,6 +336,7 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     VoxelData voxel = voxels[idx];
     vec3 bmin = {voxel.bmin[0], voxel.bmin[1], voxel.bmin[2]};
     vec3 bmax = {voxel.bmax[0], voxel.bmax[1], voxel.bmax[2]};
+
     float a = voxel.q[0]*r.d.x*r.d.x+voxel.q[1]*r.d.y*r.d.y+voxel.q[2]*r.d.z*r.d.z
         +voxel.q[3]*r.d.x*r.d.y+voxel.q[4]*r.d.x*r.d.z+voxel.q[5]*r.d.y*r.d.z;
     float b = 2*voxel.q[0]*r.o.x*r.d.x+2*voxel.q[1]*r.o.y*r.d.y+2*voxel.q[2]*r.o.z*r.d.z
@@ -340,6 +354,10 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     //float sigma = 0.00001f;
     IntersectResult res;
     res.idx = -1;
+    if (a == 0) {
+        res.t = MAX_DIST;
+        return res;
+    }
     float upSol = getMinimumQuadraticSolution(r, a, b, c-3.f*sigma, tMin, tMax, bmin, bmax);
     float downSol = getMinimumQuadraticSolution(r, a, b, c+3.f*sigma, tMin, tMax, bmin, bmax);
     float aabb = intersectAABB(r, bmin, bmax, tMin, tMax);
@@ -357,16 +375,105 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     return res;
 }
 
+// IntersectResult intersect(Ray r, float tMax) {
+//     IntersectResult res;
+//     res.t = MAX_DIST;
+//     res.idx = -1;
+//     for (int i = 0; i < voxelSize; i++) {
+//         IntersectResult intr = intersectVoxel(r, i, EPS, tMax);
+//         if (intr.t < res.t) {
+//             res = intr;
+//         }
+//     }
+//     return res;
+// }
+
+OctreeNode uStk[MAX_LAYERS];
+int iterStk[MAX_LAYERS];
+int closestChildIdxStk[MAX_LAYERS];
+float planeHitStk[MAX_LAYERS][3];
+
+int closestChildIndex(Ray r, vec3 center) {
+    vec3 v = r.o-center;
+    int xTest = int(v.x >= 0.f);
+    int yTest = int(v.y >= 0.f);
+    int zTest = int(v.z >= 0.f);
+    return (xTest << 2) | (yTest << 1) | zTest;
+}
+
+float intersectOctPlane(Ray r, vec3 n, vec3 bmin, vec3 bmax, float tMin, float tMax) {
+    vec3 center = (bmin+bmax)/2.f;
+    float t = dot(center-r.o, n)/dot(r.d, n);
+    if (tMin < t && t < tMax) {
+        return t;
+    }
+    return MAX_DIST;
+}
+
 IntersectResult intersect(Ray r, float tMax) {
+    int top = 0;
     IntersectResult res;
-    res.t = MAX_DIST;
     res.idx = -1;
-    for (int i = 0; i < voxelSize; i++) {
-        IntersectResult intr = intersectVoxel(r, i, EPS, tMax);
-        if (intr.t < res.t) {
-            res = intr;
+    res.t = tMax;
+    uStk[top] = octreeNodes[0];
+    
+    closestChildIdxStk[top] = -1;
+    iterStk[top] = -1;
+
+    float tMin = EPS;
+    int rCnt = 0;
+    while (top >= 0) {
+        if (iterStk[top] == -1) {
+            float aabb = intersectAABB(r, uStk[top].bmin, uStk[top].bmax, tMin, res.t);
+            if (aabb >= res.t){
+                top--;
+                continue;
+            }
+        }
+        if (top == octreeLayer) {
+            rCnt++;
+            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, tMin, res.t);
+            if (intr.t < res.t) {
+                res = intr;
+            }
+            top--;
+        } else {
+            if (iterStk[top] < 4) {
+                if (iterStk[top] == -1) {
+                    closestChildIdxStk[top] = closestChildIndex(r, (uStk[top].bmin+uStk[top].bmax)/2.f);
+                    planeHitStk[top][0] = intersectOctPlane(r, vec3(0, 0, 1), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+                    planeHitStk[top][1] = intersectOctPlane(r, vec3(0, 1, 0), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+                    planeHitStk[top][2] = intersectOctPlane(r, vec3(1, 0, 0), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+                } else {
+                    int planeIdx = -1;
+                    float tPlane = MAX_DIST;
+                    for (int i = 0; i < 3; ++i) {
+                        if (planeHitStk[top][i] < tPlane) {
+                            tPlane = planeHitStk[top][i];
+                            planeIdx = i;
+                        }
+                    }
+                    if (planeIdx == -1) {
+                        top--;
+                        continue;
+                    }
+                    closestChildIdxStk[top] ^= 1 << planeIdx;
+                    planeHitStk[top][planeIdx] = MAX_DIST;
+                }
+                iterStk[top]++;
+                int vIdx = uStk[top].children[closestChildIdxStk[top]];
+                if (vIdx >= 0) {
+                    top++;
+                    uStk[top] = octreeNodes[vIdx];
+                    closestChildIdxStk[top] = -1;
+                    iterStk[top] = -1;
+                }
+            } else {
+                top--;
+            }
         }
     }
+    //res.t = rCnt;
     return res;
 }
 
@@ -435,6 +542,7 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
+            // return vec3(r.medium);
             // return vec3(tMax);
             // VoxelData voxel = voxels[r.medium];
             // return vec3(voxel.alpha);

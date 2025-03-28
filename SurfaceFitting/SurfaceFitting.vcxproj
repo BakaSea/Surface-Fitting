@@ -156,6 +156,7 @@
     <ClCompile Include="src\ellipsoidhull.cpp" />
     <ClCompile Include="src\glad.c" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\octree.cpp" />
     <ClCompile Include="src\quadricfitting.cpp" />
     <ClCompile Include="src\roots3and4.cpp" />
     <ClCompile Include="src\surface_fit.cpp" />
@@ -167,6 +168,7 @@
     <ClInclude Include="src\ellipsoidhull.h" />
     <ClInclude Include="src\json.hpp" />
     <ClInclude Include="src\mesh.h" />
+    <ClInclude Include="src\octree.h" />
     <ClInclude Include="src\quadricfitting.h" />
     <ClInclude Include="src\roots3and4.h" />
     <ClInclude Include="src\shader_c.h" />

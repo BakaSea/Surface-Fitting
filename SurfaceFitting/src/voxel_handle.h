@@ -1,22 +1,16 @@
 #pragma once
 #include <vector>
-#include "surface_fit.h"
 #include "mesh.h"
 #include "tiny_gltf.h"
+#include "octree.h"
 using namespace std;
-
-struct Voxel {
-    QuadricFit fit;
-    Quadric quadric;
-    SGGX sggx;
-    vec3 bmin, bmax;
-    float alpha;
-};
 
 struct VoxelLayer {
 
     ivec3 slice;
-    vector<vector<vector<Voxel>>> voxels;
+    //vector<vector<vector<Voxel>>> voxels;
+    Octree octree;
+
     vector<Mesh> meshes;
 
     VoxelLayer(string meshFile, int s);
