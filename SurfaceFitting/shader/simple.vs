@@ -14,6 +14,7 @@ uniform mat4 projection;
 void main() {
     TexCoords = aTexCoords;    
     gl_Position = projection*view*model*vec4(aPos, 1.f);
-    worldPos = vec3(model*vec4(aPos, 1.f));
-    worldNormal = vec3(transpose(inverse(model))*vec4(aNormal, 1.f));
+    vec4 wPos = model*vec4(aPos, 1.f);
+    worldPos = wPos.xyz/wPos.w;
+    worldNormal = vec3(transpose(inverse(model))*vec4(aNormal, 0.f));
 }

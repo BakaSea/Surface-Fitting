@@ -40,7 +40,7 @@ void renderQuad();
 // settings
 const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
-int renderMode = 0;
+int renderMode = 1;
 
 // camera
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
@@ -256,6 +256,7 @@ int main(int argc, char **argv) {
             simpleShader.use();
             simpleShader.setMat4("model", mat4(1.0f));
             simpleShader.setMat4("projection", projection);
+            simpleShader.setVec3("cameraPos", camera.Position);
             simpleShader.setMat4("view", view);
             for (auto& mesh : layer.meshes) {
                 mesh.Draw(simpleShader);

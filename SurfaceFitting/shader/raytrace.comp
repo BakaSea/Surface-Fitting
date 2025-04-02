@@ -434,7 +434,8 @@ IntersectResult intersect(Ray r, float tMax) {
             rCnt++;
             IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, tMin, res.t);
             if (intr.t < res.t) {
-                res = intr;
+                //res = intr;
+                return intr;
             }
             top--;
         } else {
