@@ -30,6 +30,10 @@ float G(float NdotL, float NdotV, float roughness) {
     return Gv*Gl;
 }
 
+vec3 tonemapping(vec3 color) {
+    return pow(color, vec3(1.f/2.2f));
+}
+
 void main() {
     vec3 N = normalize(worldNormal);
     vec3 V = normalize(cameraPos-worldPos);
@@ -44,6 +48,8 @@ void main() {
     //vec3 color = (N+1.f)/2.f;
     vec3 fresnel = F(albedo, VdotH);
     vec3 specular = fresnel*D(NdotH, roughness)/**G(NdotL, NdotV, roughness)*//(4.f*NdotV*NdotL);
-    vec3 color = specular*NdotL*lightI/d2;
+    vec3 diffuse = albedo/M_PI;
+    vec3 color = diffuse*NdotL*lightI/d2;
+    color = tonemapping(color);
     FragColor = vec4(color, 1);
 }

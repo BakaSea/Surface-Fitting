@@ -9,7 +9,7 @@ Voxel& Octree::getVoxel(int layer, vec3 center) {
 		if (nodes[u].children[idx.x][idx.y][idx.z] == -1) {
 			OctreeNode v;
 			v.bmin = nodes[u].bmin + vec3(idx) * cap;
-			v.bmax = v.bmin + cap;
+			v.bmax = v.bmin + cap - vec3(1e-4f);
 			nodes.push_back(v);
 			nodes[u].children[idx.x][idx.y][idx.z] = nodes.size() - 1;
 		}

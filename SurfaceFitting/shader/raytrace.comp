@@ -103,6 +103,7 @@ uint rngState =  800*600*currentSample+600*gl_GlobalInvocationID.x+gl_GlobalInvo
 int loopCnt = 0;
 int rayMedium = -1;
 bool debug = false;
+vec3 debugInfo;
 
 float random() {
     return stepAndOutputRNGFloat(rngState);
@@ -221,7 +222,9 @@ float density(float q[10], vec3 p, float sigma, float alpha, float wDotN) {
 
 Frame coordinateSystem(vec3 n) {
     vec3 s, t;
-    float si = sign(n.z);
+    float si = 1.f;
+    if (n.z < 0.f)
+        si = -1.f;
     float a = -1.f/(si+n.z);
     float b = n.x*n.y*a;
     s = vec3(1.f+si*n.x*n.x*a, si*b, -si*n.x);
@@ -232,6 +235,9 @@ Frame coordinateSystem(vec3 n) {
 vec3 evalTransmittance(Ray r, float tMax) {
     VoxelData voxel = voxels[r.medium];
     float maxDensity = voxel.alpha*GaussianDistrubtion(0, 0, voxel.sigma);
+    if (maxDensity == 0) {
+        return vec3(1.f);
+    }
     SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
     int nSamples = 2;
     float result = 0.f;
@@ -268,7 +274,12 @@ MediumResult sampleDistance(Ray r, float tMax) {
     bool success = false;
     float t = 0.f;
     float maxDensity = voxel.alpha*GaussianDistrubtion(0, 0, voxel.sigma);
+    if (maxDensity == 0) {
+        mRes.success = false;
+        return mRes;
+    }
     vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
+    int i = 0;
     while (true) {
         t += sampleExponential(random(), maxDensity);
         if (t >= tMax)
@@ -287,6 +298,7 @@ MediumResult sampleDistance(Ray r, float tMax) {
             success = true;
             break;
         }
+        i++;
     }
     mRes.success = success && mRes.pdfSuccess > 0;
     return mRes;
@@ -325,7 +337,7 @@ float intersectAABB(Ray r, vec3 bmin, vec3 bmax, float tMin, float tMax) {
     vec3 t2 = max(tmin, tmax);
     float tEnter = max(max(t1.x, t1.y), t1.z);
     float tExit = min(min(t2.x, t2.y), t2.z);
-    if (tEnter < tExit && tExit >= 0) {
+    if (tEnter < tExit) {
         if (tMin < tEnter && tEnter < tMax) return tEnter;
         if (tMin < tExit && tExit < tMax) return tExit;
     }
@@ -351,7 +363,7 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     //     +voxel.hullQ[6]*r.d.x+voxel.hullQ[7]*r.d.y+voxel.hullQ[8]*r.d.z;
     // float c = f(voxel.hullQ, r.o);
     float sigma = voxel.sigma;
-    //float sigma = 0.00001f;
+    //float sigma = 1e-4f;
     IntersectResult res;
     res.idx = -1;
     if (a == 0) {
@@ -361,6 +373,7 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     float upSol = getMinimumQuadraticSolution(r, a, b, c-3.f*sigma, tMin, tMax, bmin, bmax);
     float downSol = getMinimumQuadraticSolution(r, a, b, c+3.f*sigma, tMin, tMax, bmin, bmax);
     float aabb = intersectAABB(r, bmin, bmax, tMin, tMax);
+
     if (aabb < MAX_DIST) {
         float func = f(voxel.q, r.o+aabb*r.d);
         if (func < -3.f*sigma || 3.f*sigma < func) {
@@ -379,12 +392,13 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
 //     IntersectResult res;
 //     res.t = MAX_DIST;
 //     res.idx = -1;
-//     for (int i = 0; i < voxelSize; i++) {
+//     //for (int i = 0; i < voxelSize; i++) {
+//         int i = 317;
 //         IntersectResult intr = intersectVoxel(r, i, EPS, tMax);
 //         if (intr.t < res.t) {
 //             res = intr;
 //         }
-//     }
+//     //}
 //     return res;
 // }
 
@@ -410,71 +424,113 @@ float intersectOctPlane(Ray r, vec3 n, vec3 bmin, vec3 bmax, float tMin, float t
     return MAX_DIST;
 }
 
+// IntersectResult intersect(Ray r, float tMax) {
+//     int top = 0;
+//     IntersectResult res;
+//     res.idx = -1;
+//     res.t = tMax;
+//     uStk[top] = octreeNodes[0];
+    
+//     closestChildIdxStk[top] = -1;
+//     iterStk[top] = -1;
+
+//     float tMin = EPS;
+//     int rCnt = 0;
+//     while (top >= 0) {
+//         if (iterStk[top] == -1) {
+//             float aabb = intersectAABB(r, uStk[top].bmin, uStk[top].bmax, tMin, res.t);
+//             if (aabb >= res.t){
+//                 top--;
+//                 continue;
+//             }
+//         }
+//         if (top == octreeLayer) {
+//             rCnt++;
+//             if (uStk[top].voxelId != 338 && uStk[top].voxelId != 126) {
+//                 top--;
+//                 continue;
+//             }
+//             IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, tMin, res.t);
+//             if (intr.t < res.t) {
+//                 //res = intr;
+//                 return intr;
+//             }
+//             top--;
+//         } else {
+//             if (iterStk[top] < 4) {
+//                 if (iterStk[top] == -1) {
+//                     closestChildIdxStk[top] = closestChildIndex(r, (uStk[top].bmin+uStk[top].bmax)/2.f);
+//                     planeHitStk[top][0] = intersectOctPlane(r, vec3(0, 0, 1), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+//                     planeHitStk[top][1] = intersectOctPlane(r, vec3(0, 1, 0), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+//                     planeHitStk[top][2] = intersectOctPlane(r, vec3(1, 0, 0), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+//                 } else {
+//                     int planeIdx = -1;
+//                     float tPlane = MAX_DIST;
+//                     for (int i = 0; i < 3; ++i) {
+//                         if (planeHitStk[top][i] < tPlane) {
+//                             tPlane = planeHitStk[top][i];
+//                             planeIdx = i;
+//                         }
+//                     }
+//                     if (planeIdx == -1) {
+//                         top--;
+//                         continue;
+//                     }
+//                     closestChildIdxStk[top] ^= 1 << planeIdx;
+//                     planeHitStk[top][planeIdx] = MAX_DIST;
+//                 }
+//                 iterStk[top]++;
+//                 int vIdx = uStk[top].children[closestChildIdxStk[top]];
+//                 if (vIdx >= 0) {
+//                     top++;
+//                     uStk[top] = octreeNodes[vIdx];
+//                     closestChildIdxStk[top] = -1;
+//                     iterStk[top] = -1;
+//                 }
+//             } else {
+//                 top--;
+//             }
+//         }
+//     }
+//     //res.t = rCnt;
+//     return res;
+// }
+
 IntersectResult intersect(Ray r, float tMax) {
     int top = 0;
     IntersectResult res;
     res.idx = -1;
     res.t = tMax;
     uStk[top] = octreeNodes[0];
-    
-    closestChildIdxStk[top] = -1;
-    iterStk[top] = -1;
-
-    float tMin = EPS;
-    int rCnt = 0;
+    iterStk[top] = 0;
     while (top >= 0) {
-        if (iterStk[top] == -1) {
-            float aabb = intersectAABB(r, uStk[top].bmin, uStk[top].bmax, tMin, res.t);
-            if (aabb >= res.t){
+        if (iterStk[top] == 0) {
+            float aabb = intersectAABB(r, uStk[top].bmin, uStk[top].bmax, EPS, res.t);
+            if (aabb >= res.t) {
                 top--;
                 continue;
             }
         }
         if (top == octreeLayer) {
-            rCnt++;
-            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, tMin, res.t);
+            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, EPS, res.t);
             if (intr.t < res.t) {
-                //res = intr;
-                return intr;
+                res = intr;
             }
             top--;
         } else {
-            if (iterStk[top] < 4) {
-                if (iterStk[top] == -1) {
-                    closestChildIdxStk[top] = closestChildIndex(r, (uStk[top].bmin+uStk[top].bmax)/2.f);
-                    planeHitStk[top][0] = intersectOctPlane(r, vec3(0, 0, 1), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
-                    planeHitStk[top][1] = intersectOctPlane(r, vec3(0, 1, 0), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
-                    planeHitStk[top][2] = intersectOctPlane(r, vec3(1, 0, 0), uStk[top].bmin, uStk[top].bmax, EPS, res.t);
-                } else {
-                    int planeIdx = -1;
-                    float tPlane = MAX_DIST;
-                    for (int i = 0; i < 3; ++i) {
-                        if (planeHitStk[top][i] < tPlane) {
-                            tPlane = planeHitStk[top][i];
-                            planeIdx = i;
-                        }
-                    }
-                    if (planeIdx == -1) {
-                        top--;
-                        continue;
-                    }
-                    closestChildIdxStk[top] ^= 1 << planeIdx;
-                    planeHitStk[top][planeIdx] = MAX_DIST;
-                }
+            if (iterStk[top] < 8) {
+                int vIdx = uStk[top].children[iterStk[top]];
                 iterStk[top]++;
-                int vIdx = uStk[top].children[closestChildIdxStk[top]];
                 if (vIdx >= 0) {
                     top++;
                     uStk[top] = octreeNodes[vIdx];
-                    closestChildIdxStk[top] = -1;
-                    iterStk[top] = -1;
+                    iterStk[top] = 0;
                 }
             } else {
                 top--;
             }
         }
     }
-    //res.t = rCnt;
     return res;
 }
 
@@ -543,10 +599,10 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            // return vec3(r.medium);
-            // return vec3(tMax);
+            //return vec3(r.medium, 1000.f*tMax, 0.f);
             // VoxelData voxel = voxels[r.medium];
             // return vec3(voxel.alpha);
+            // return 10000.0f*vec3(voxel.sigma);
             // SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
             // vec3 n = normalize(df(voxel.q, r.o));
             // Frame f = coordinateSystem(n);

@@ -306,6 +306,8 @@ void VoxelLayer::handleMeshes(int s) {
             //voxel.alpha = 1.f;
             out << ' ' << voxel.alpha << endl;
             voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
+            voxel.sggx.S_xx = voxel.sggx.S_yy = 0.1f;
+            voxel.sggx.S_zz = 1.f;
             //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
         }
     }

@@ -234,29 +234,27 @@ Quadric QuadricFit::fitQuadric() const {
 			}
 		}
 	}
-	if (secCol == -1) {
-		cout << "ff" << endl;
-		return Quadric(c, -1.f);
-	}
-	secC = ges.eigenvectors().col(secCol).real();
-	if (lineSearch(minC, secC, t)) {
-		VectorXd vc = (1.0 - t) * minC + t * secC;
-		for (int i = 0; i < 10; ++i) {
-			c[i] = vc[i];
+	if (secCol >= 0) {
+		secC = ges.eigenvectors().col(secCol).real();
+		if (lineSearch(minC, secC, t)) {
+			VectorXd vc = (1.0 - t) * minC + t * secC;
+			for (int i = 0; i < 10; ++i) {
+				c[i] = vc[i];
+			}
+			//double var = vc.transpose() * M * vc;
+			double var = vc.transpose() * wM * vc;
+			if (var < 0) {
+				return Quadric(c, FLT_EPSILON);
+			}
+			return Quadric(c, sqrt(var));
 		}
-		//double var = vc.transpose() * M * vc;
-		double var = vc.transpose() * wM * vc;
-		if (var < 0) {
-			return Quadric(c, FLT_EPSILON);
-		}
-		return Quadric(c, sqrt(var));
 	}
 	for (int i = 0; i < 10; ++i) {
-		c[i] = secC(i);
+		c[i] = minC(i);
 	}
 	//cout << 3 << endl;
 	//double var = secC.transpose() * M * secC;
-	double var = secC.transpose() * wM * secC;
+	double var = minC.transpose() * wM * minC;
 	if (var < 0) {
 		return Quadric(c, FLT_EPSILON);
 	}
@@ -264,7 +262,7 @@ Quadric QuadricFit::fitQuadric() const {
 }
 
 void coordinateSystem(const vec3 &n, vec3 &s, vec3 &t) {
-	float si = sign(n.z);
+	float si = copysign(1.f, n.z);
 	float a = -1.f / (si + n.z);
 	float b = n.x * n.y * a;
 	s = vec3(1.f + si * n.x * n.x * a, si * b, -si * n.x);
@@ -298,10 +296,16 @@ SGGX QuadricFit::fitSGGX(const Quadric& q) const {
 		//S[2][2] += 4.f * area;
 
 		normalWeightSum += 4.f * area;
+		if (isnan(S[0][0]) || isnan(S[1][1]) || isnan(S[2][2])) {
+			cout << 1 << endl;
+		}
 	}
 	S /= normalWeightSum;
 	for (int i = 0; i < 3; ++i) {
 		S[i][i] *= S[i][i];
+		if (isnan(S[i][i])) {
+			cout << 2 << endl;
+		}
 	}
 	//S = mat3(1.f);
 	//S[0][0] = .1f;
