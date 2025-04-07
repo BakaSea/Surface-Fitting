@@ -18,7 +18,7 @@ struct Quadric {
 	Quadric(float param[10], float s) {
 		for (int i = 0; i < 10; ++i)
 			c[i] = param[i];
-		sigma = std::max(s, 1e-5f);
+		sigma = std::max(s, 1e-6f);
 	}
 
 	float f(const vec3& p) const {

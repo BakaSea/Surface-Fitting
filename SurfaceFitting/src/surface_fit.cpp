@@ -269,47 +269,112 @@ void coordinateSystem(const vec3 &n, vec3 &s, vec3 &t) {
 	t = vec3(b, si + n.y * n.y * a, -n.y);
 }
 
+//SGGX QuadricFit::fitSGGX(const Quadric& q) const {
+//	mat3 S(0.f);
+//	float normalWeightSum = 0.f;
+//	for (auto& tri : triangles) {
+//		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
+//		vec3 n = cross(e1, e2);
+//		float area = length(n) / 2.f;
+//		n = normalize(n);
+//		vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f)), s, t;
+//		coordinateSystem(qn, s, t);
+//		n = vec3(dot(s, n), dot(t, n), dot(qn, n));
+//
+//		//S[0][0] += area * glm::clamp(n.x, 0.f, 1.f);
+//		//S[0][0] += area * glm::clamp(-n.x, 0.f, 1.f);
+//		//S[0][0] += area * glm::clamp(n.y, 0.f, 1.f);
+//		//S[0][0] += area * glm::clamp(-n.y, 0.f, 1.f);
+//
+//		//S[1][1] += area * glm::clamp(n.x, 0.f, 1.f);
+//		//S[1][1] += area * glm::clamp(-n.x, 0.f, 1.f);
+//		//S[1][1] += area * glm::clamp(n.y, 0.f, 1.f);
+//		//S[1][1] += area * glm::clamp(-n.y, 0.f, 1.f);
+//
+//		//S[2][2] += 2.f * area * glm::clamp(n.z, 0.f, 1.f);
+//		//S[2][2] += 2.f * area * glm::clamp(-n.z, 0.f, 1.f);
+//		//S[2][2] += 4.f * area;
+//
+//		S[0][0] += area * fabs(n.x);
+//		S[0][0] += area * fabs(n.y);
+//
+//		S[1][1] += area * fabs(n.x);
+//		S[1][1] += area * fabs(n.y);
+//
+//		S[2][2] += 2.f * area * fabs(n.z);
+//
+//		//normalWeightSum += 4.f * area;
+//		normalWeightSum += 2.f * area;
+//		if (isnan(S[0][0]) || isnan(S[1][1]) || isnan(S[2][2])) {
+//			cout << 1 << endl;
+//		}
+//	}
+//	S /= normalWeightSum;
+//	for (int i = 0; i < 3; ++i) {
+//		S[i][i] *= S[i][i];
+//		if (isnan(S[i][i])) {
+//			cout << 2 << endl;
+//		}
+//	}
+//	//S = mat3(1.f);
+//	//S[0][0] = .1f;
+//	//S[1][1] = .1f;
+//	return SGGX(S);
+//}
+
 SGGX QuadricFit::fitSGGX(const Quadric& q) const {
-	mat3 S(0.f);
-	float normalWeightSum = 0.f;
+	Matrix3f Sigma = Matrix3f::Zero();
+	float normalSum = 0.f;
 	for (auto& tri : triangles) {
 		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
 		vec3 n = cross(e1, e2);
 		float area = length(n) / 2.f;
 		n = normalize(n);
-		vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f)), s, t;
-		coordinateSystem(qn, s, t);
-		n = vec3(dot(s, n), dot(t, n), dot(qn, n));
-
-		S[0][0] += area * glm::clamp(n.x, 0.f, 1.f);
-		S[0][0] += area * glm::clamp(-n.x, 0.f, 1.f);
-		S[0][0] += area * glm::clamp(n.y, 0.f, 1.f);
-		S[0][0] += area * glm::clamp(-n.y, 0.f, 1.f);
-
-		S[1][1] += area * glm::clamp(n.x, 0.f, 1.f);
-		S[1][1] += area * glm::clamp(-n.x, 0.f, 1.f);
-		S[1][1] += area * glm::clamp(n.y, 0.f, 1.f);
-		S[1][1] += area * glm::clamp(-n.y, 0.f, 1.f);
-
-		S[2][2] += 2.f * area * glm::clamp(n.z, 0.f, 1.f);
-		S[2][2] += 2.f * area * glm::clamp(-n.z, 0.f, 1.f);
-		//S[2][2] += 4.f * area;
-
-		normalWeightSum += 4.f * area;
-		if (isnan(S[0][0]) || isnan(S[1][1]) || isnan(S[2][2])) {
-			cout << 1 << endl;
-		}
+		normalSum += area;
+		Sigma(0, 0) += area * n.x * n.x;
+		Sigma(1, 1) += area * n.y * n.y;
+		Sigma(2, 2) += area * n.z * n.z;
+		Sigma(0, 1) += area * n.x * n.y;
+		Sigma(1, 0) += area * n.y * n.x;
+		Sigma(0, 2) += area * n.x * n.z;
+		Sigma(2, 0) += area * n.z * n.x;
+		Sigma(1, 2) += area * n.y * n.z;
+		Sigma(2, 1) += area * n.z * n.y;
 	}
-	S /= normalWeightSum;
+	Sigma /= normalSum;
+	SelfAdjointEigenSolver<Matrix3f> es;
+	es.computeDirect(Sigma);
+	Matrix3f eigenVecs = es.eigenvectors();
+	mat3 eigenMat;
 	for (int i = 0; i < 3; ++i) {
-		S[i][i] *= S[i][i];
-		if (isnan(S[i][i])) {
-			cout << 2 << endl;
+		for (int j = 0; j < 3; ++j) {
+			eigenMat[i][j] = eigenVecs.col(i)[j];
 		}
 	}
-	//S = mat3(1.f);
-	//S[0][0] = .1f;
-	//S[1][1] = .1f;
+	vec3 sigma(0.f);
+	for (int i = 0; i < 3; ++i) {
+		vec3 omega = eigenMat[i];
+		for (auto& tri : triangles) {
+			vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
+			vec3 n = cross(e1, e2);
+			float area = length(n) / 2.f;
+			n = normalize(n);
+			sigma[i] += area * fabs(dot(omega, n));
+		}
+	}
+	sigma /= normalSum;
+	mat3 diag(0.f);
+	for (int i = 0; i < 3; ++i) {
+		diag[i][i] = std::max(sigma[i] * sigma[i], 1e-6f);
+	}
+	mat3 S = eigenMat * diag * transpose(eigenMat);
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			if (isnan(S[i][j])) {
+				cout << "s" << endl;
+			}
+		}
+	}
 	return SGGX(S);
 }
 

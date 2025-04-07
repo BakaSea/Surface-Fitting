@@ -2,7 +2,7 @@
 #define MAX_DIST 100
 #define M_PI 3.14159265358979323846
 #define INV4PI 0.07957747154594766788
-#define EPS 1e-4
+#define EPS 1e-5
 #define MAX_LAYERS 20
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -242,7 +242,7 @@ vec3 evalTransmittance(Ray r, float tMax) {
     int nSamples = 2;
     float result = 0.f;
     for (int i = 0; i < nSamples; ++i) {
-        float t = 0;
+        float t = EPS;
         while (true) {
             t += sampleExponential(random(), maxDensity);
             if (t >= tMax) {
@@ -252,8 +252,6 @@ vec3 evalTransmittance(Ray r, float tMax) {
             vec3 p = r.o+t*r.d;
 
             vec3 n = normalize(df(voxel.q, p));
-            Frame f = coordinateSystem(n);
-            vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
             float densityAtT = density(voxel.q, p, voxel.sigma, voxel.alpha, abs(dot(-r.d, n)));
 
             if (densityAtT/maxDensity > random())
@@ -287,8 +285,6 @@ MediumResult sampleDistance(Ray r, float tMax) {
         vec3 p = r.o+t*r.d;
 
         vec3 n = normalize(df(voxel.q, p));
-        Frame f = coordinateSystem(n);
-        vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
         float densityAtT = density(voxel.q, p, voxel.sigma, voxel.alpha, abs(dot(-r.d, n)));
 
         if (densityAtT/maxDensity > random()) {
@@ -344,7 +340,7 @@ float intersectAABB(Ray r, vec3 bmin, vec3 bmax, float tMin, float tMax) {
     return MAX_DIST;
 }
 
-IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
+IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax, bool inMedium) {
     VoxelData voxel = voxels[idx];
     vec3 bmin = {voxel.bmin[0], voxel.bmin[1], voxel.bmin[2]};
     vec3 bmax = {voxel.bmax[0], voxel.bmax[1], voxel.bmax[2]};
@@ -373,15 +369,17 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     float upSol = getMinimumQuadraticSolution(r, a, b, c-3.f*sigma, tMin, tMax, bmin, bmax);
     float downSol = getMinimumQuadraticSolution(r, a, b, c+3.f*sigma, tMin, tMax, bmin, bmax);
     float aabb = intersectAABB(r, bmin, bmax, tMin, tMax);
-
-    if (aabb < MAX_DIST) {
+    if (aabb < tMax) {
         float func = f(voxel.q, r.o+aabb*r.d);
         if (func < -3.f*sigma || 3.f*sigma < func) {
             aabb = MAX_DIST;
         }
     }
     res.t = min(min(upSol, downSol), aabb);
-    if (res.t < MAX_DIST) {
+    if (inMedium && res.t >= tMax) {
+        res.t = tMin;
+    }
+    if (res.t < tMax) {
         res.intersection = r.o+res.t*r.d;
         res.idx = idx;
     }
@@ -512,7 +510,7 @@ IntersectResult intersect(Ray r, float tMax) {
             }
         }
         if (top == octreeLayer) {
-            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, EPS, res.t);
+            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, EPS, res.t, false);
             if (intr.t < res.t) {
                 res = intr;
             }
@@ -566,7 +564,7 @@ DirectSamplingResult sampleLd(vec3 p, int medium) {
     IntersectResult iRes;
     while (lightDist > EPS) {
         if (r.medium >= 0) {
-            iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST);
+            iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST, true);
             if (iRes.t >= MAX_DIST)
                iRes.t = 0.f;
             transmittance *= evalTransmittance(r, min(iRes.t, lightDist));
@@ -585,6 +583,7 @@ DirectSamplingResult sampleLd(vec3 p, int medium) {
         }
     }
     dRes.Ld *= transmittance;
+    //dRes.Ld = transmittance;
     return dRes;
 }
 
@@ -599,7 +598,7 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            //return vec3(r.medium, 1000.f*tMax, 0.f);
+            // return vec3(r.medium, 1000.f*tMax, 0.f);
             // VoxelData voxel = voxels[r.medium];
             // return vec3(voxel.alpha);
             // return 10000.0f*vec3(voxel.sigma);
@@ -615,17 +614,18 @@ vec3 Li(Ray r) {
                 throughput *= mRes.sigma_s*mRes.transmittance/mRes.pdfSuccess;
                 DirectSamplingResult dRes = sampleLd(mRes.p, r.medium);
 
-                VoxelData voxel = voxels[r.medium];
-                vec3 n = normalize(df(voxel.q, mRes.p));
-                Frame f = coordinateSystem(n);
-                vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
-                vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
-                float phaseVal = phasePdf(mRes.sggx, wo, wi);
+                // VoxelData voxel = voxels[r.medium];
+                // vec3 n = normalize(df(voxel.q, mRes.p));
+                // Frame f = coordinateSystem(n);
+                // vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+                // vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
+                // float phaseVal = phasePdf(mRes.sggx, wo, wi);
 
-                //float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
+                float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
                 // Note that we are only using point light.
                 float weight = miWeight(dRes.pdf, 0.f);
                 L += throughput*dRes.Ld*phaseVal*weight;
+                //L = dRes.Ld;
                 // Multiple scattering prohibited
                 break;
             }
@@ -647,13 +647,65 @@ vec3 Li(Ray r) {
                 r.medium = -1;
             }
             if (r.medium >= 0) {
-                iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST);
+                iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST, true);
             } else {
                 iRes = intersect(r, MAX_DIST);
             }
         }
         loopCnt++;
         rayMedium = r.medium;
+    }
+    return L;
+}
+
+vec3 F(vec3 F0, float VdotH) {
+    return mix(F0, vec3(1.f), pow(1.f-VdotH, 5.f));
+}
+
+float D(float NdotH, float roughness) {
+    float a2 = roughness*roughness;
+    float cos2Theta = NdotH*NdotH;
+    float tan2Theta = (1.f-cos2Theta)/cos2Theta;
+    float d = 1.f+tan2Theta/a2;
+    return 1.f/(M_PI*a2*cos2Theta*cos2Theta*d*d);
+}
+
+float lambda(float cosTheta, float roughness) {
+    float cos2Theta = cosTheta*cosTheta;
+    float tan2Theta = (1.f-cos2Theta)/cos2Theta;
+    float a2 = roughness*roughness;
+    return (sqrt(1.f+a2*tan2Theta)-1.f)/2.f;
+}
+
+float G(float NdotL, float NdotV, float roughness) {
+    return 1.f/(1.f+lambda(NdotL, roughness)+lambda(NdotV, roughness));
+}
+
+vec3 LGGX(Ray r) {
+    vec3 L = vec3(0.f);
+    float roughness = .31623f;
+    IntersectResult iRes = intersect(r, MAX_DIST);
+    if (iRes.idx >= 0) {
+        VoxelData voxel = voxels[iRes.idx];
+        vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
+        vec3 n = normalize(df(voxel.q, iRes.intersection));
+        vec3 wi = lightPos-iRes.intersection;
+        float lightDist = length(wi);
+        wi = normalize(wi);
+        Ray shadowRay;
+        shadowRay.o = iRes.intersection;
+        shadowRay.d = wi;
+        IntersectResult shadowRes = intersect(shadowRay, MAX_DIST);
+        if (shadowRes.t < MAX_DIST) {
+            vec3 H = normalize(wi-r.d);
+            float NdotH = abs(dot(n, H));
+            float NdotL = abs(dot(n, wi));
+            float NdotV = abs(dot(n, -r.d));
+            float VdotH = abs(dot(n, H));
+            vec3 fresnel = F(albedo, VdotH);
+            vec3 specular = fresnel*D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL);
+            L += specular*NdotL*lightI/(lightDist*lightDist);
+        }   
     }
     return L;
 }
@@ -676,6 +728,7 @@ void main() {
     color *= (currentSample-1.f)/currentSample;
     //color = Li(r);
     color += Li(r)/currentSample;
+    //color += LGGX(r)/currentSample;
     //color += LiPBRT(r)/currentSample;
     imageStore(imgOutput, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.f));
 }

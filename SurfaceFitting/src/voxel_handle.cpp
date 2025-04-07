@@ -35,7 +35,7 @@ void VoxelLayer::loadFromObj(string meshFile, int s) {
 
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
-    float scale = 5.0f;
+    float scale = 1.0f;
 
     for (size_t s = 0; s < shapes.size(); ++s) {
         vector<unsigned int> indices(shapes[s].mesh.indices.size());
@@ -306,8 +306,8 @@ void VoxelLayer::handleMeshes(int s) {
             //voxel.alpha = 1.f;
             out << ' ' << voxel.alpha << endl;
             voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
-            voxel.sggx.S_xx = voxel.sggx.S_yy = 0.1f;
-            voxel.sggx.S_zz = 1.f;
+            //voxel.sggx.S_xx = voxel.sggx.S_yy = 0.1f;
+            //voxel.sggx.S_zz = 1.f;
             //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
         }
     }

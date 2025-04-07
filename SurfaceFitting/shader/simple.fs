@@ -11,7 +11,8 @@ uniform vec3 cameraPos;
 vec3 lightPos = vec3(1.f, 1.f, 1.f);
 vec3 lightI = vec3(10.f);
 vec3 albedo = vec3(.7f, .6f, .5f);
-float roughness = .2f;
+//float roughness = .31623f;
+float roughness = 0.05f;
 
 vec3 F(vec3 F0, float VdotH) {
     return mix(F0, vec3(1.f), pow(1.f-VdotH, 5.f));
@@ -19,15 +20,21 @@ vec3 F(vec3 F0, float VdotH) {
 
 float D(float NdotH, float roughness) {
     float a2 = roughness*roughness;
-    float d = ((a2-1.f)*NdotH*NdotH+1.f);
-    return a2/(d*d*M_PI);
+    float cos2Theta = NdotH*NdotH;
+    float tan2Theta = (1.f-cos2Theta)/cos2Theta;
+    float d = 1.f+tan2Theta/a2;
+    return 1.f/(M_PI*a2*cos2Theta*cos2Theta*d*d);
+}
+
+float lambda(float cosTheta, float roughness) {
+    float cos2Theta = cosTheta*cosTheta;
+    float tan2Theta = (1.f-cos2Theta)/cos2Theta;
+    float a2 = roughness*roughness;
+    return (sqrt(1.f+a2*tan2Theta)-1.f)/2.f;
 }
 
 float G(float NdotL, float NdotV, float roughness) {
-    float k = roughness*roughness/2.f;
-    float Gv = NdotV/mix(k, 1.f, NdotV);
-    float Gl = NdotL/mix(k, 1.f, NdotL);
-    return Gv*Gl;
+    return 1.f/(1.f+lambda(NdotL, roughness)+lambda(NdotV, roughness));
 }
 
 vec3 tonemapping(vec3 color) {
@@ -47,9 +54,10 @@ void main() {
     float VdotH = clamp(dot(V, H), 0.f, 1.f);
     //vec3 color = (N+1.f)/2.f;
     vec3 fresnel = F(albedo, VdotH);
-    vec3 specular = fresnel*D(NdotH, roughness)/**G(NdotL, NdotV, roughness)*//(4.f*NdotV*NdotL);
+    vec3 specular = fresnel*D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL);
     vec3 diffuse = albedo/M_PI;
-    vec3 color = diffuse*NdotL*lightI/d2;
+    //vec3 color = diffuse*NdotL*lightI/d2;
+    vec3 color = specular*NdotL*lightI/d2;
     color = tonemapping(color);
     FragColor = vec4(color, 1);
 }
