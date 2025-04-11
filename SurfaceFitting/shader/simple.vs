@@ -16,5 +16,5 @@ void main() {
     gl_Position = projection*view*model*vec4(aPos, 1.f);
     vec4 wPos = model*vec4(aPos, 1.f);
     worldPos = wPos.xyz/wPos.w;
-    worldNormal = vec3(transpose(inverse(model))*vec4(aNormal, 0.f));
+    worldNormal = mat3(transpose(inverse(model)))*aNormal;
 }

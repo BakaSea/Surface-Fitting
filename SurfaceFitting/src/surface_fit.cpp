@@ -2,6 +2,7 @@
 #include <iostream>
 #include "roots3and4.h"
 #include "triangle_clip.h"
+#include "microfacet.h"
 using namespace std;
 
 void QuadricFit::addPoint(const dvec3& p, double w) {
@@ -37,14 +38,14 @@ const double dunavantX[6] = {0.10810301816807, 0.445948490915965, 0.445948490915
 const double dunavantY[6] = {0.445948490915965, 0.445948490915965, 0.10810301816807, 0.091576213509771007, 0.091576213509771007, 0.81684757298045896};
 
 void QuadricFit::addTriangle(const vec3 tri[3]) {
-	triangles.push_back({ tri[0], tri[1], tri[2] });
 	dvec3 dtri[3] = { dvec3(tri[0]), dvec3(tri[1]), dvec3(tri[2]) };
 	dvec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
 	dvec3 n = cross(e1, e2);
 	double area = length(n) / 2.f;
-	if (area <= 1e-6f)
+	if (area <= FLT_EPSILON)
 		return;
 	n = normalize(n);
+
 	// Fitting Quadric
 	for (int i = 0; i < 6; ++i) {
 		dvec3 p = dtri[0] * (1.0 - dunavantX[i] - dunavantY[i]) + dtri[1] * dunavantX[i] + dtri[2] * dunavantY[i];
@@ -52,23 +53,8 @@ void QuadricFit::addTriangle(const vec3 tri[3]) {
 		addPoint(p, dunavantW[i] * area);
 		//addPoint(p, dunavantW[i]);
 	}
-	// Fitting SGGX
-	//double prevNormalWeightSum = normalWeightSum;
-	//normalWeightSum += area;
-	//SigmaNormal *= prevNormalWeightSum / normalWeightSum;
-	//double wNormal = area / normalWeightSum;
-	//if (isnan(area) || isnan(n[0]) || isnan(n[1]) || isnan(n[2])) {
-	//	cout << tri[0][0] << ' ' << tri[0][1] << ' ' << tri[0][2] << endl;
-	//	cout << tri[1][0] << ' ' << tri[1][1] << ' ' << tri[1][2] << endl;
-	//	cout << tri[2][0] << ' ' << tri[2][1] << ' ' << tri[2][2] << endl;
-	//	cout << endl;
-	//}
-	//for (int i = 0; i < 3; ++i) {
-	//	for (int j = 0; j < 3; ++j) {
-	//		SigmaNormal(i, j) += wNormal * n[i] * n[j];
-	//	}
-	//}
-	//normals.push_back({ area, n });
+
+	triangles.push_back({ (tri[0] + tri[1] + tri[2]) / 3.f, n, area });
 
 	areaSum += area;
 }
@@ -269,138 +255,112 @@ void coordinateSystem(const vec3 &n, vec3 &s, vec3 &t) {
 	t = vec3(b, si + n.y * n.y * a, -n.y);
 }
 
-//SGGX QuadricFit::fitSGGX(const Quadric& q) const {
-//	mat3 S(0.f);
-//	float normalWeightSum = 0.f;
-//	for (auto& tri : triangles) {
-//		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
-//		vec3 n = cross(e1, e2);
-//		float area = length(n) / 2.f;
-//		n = normalize(n);
-//		vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f)), s, t;
-//		coordinateSystem(qn, s, t);
-//		n = vec3(dot(s, n), dot(t, n), dot(qn, n));
-//
-//		//S[0][0] += area * glm::clamp(n.x, 0.f, 1.f);
-//		//S[0][0] += area * glm::clamp(-n.x, 0.f, 1.f);
-//		//S[0][0] += area * glm::clamp(n.y, 0.f, 1.f);
-//		//S[0][0] += area * glm::clamp(-n.y, 0.f, 1.f);
-//
-//		//S[1][1] += area * glm::clamp(n.x, 0.f, 1.f);
-//		//S[1][1] += area * glm::clamp(-n.x, 0.f, 1.f);
-//		//S[1][1] += area * glm::clamp(n.y, 0.f, 1.f);
-//		//S[1][1] += area * glm::clamp(-n.y, 0.f, 1.f);
-//
-//		//S[2][2] += 2.f * area * glm::clamp(n.z, 0.f, 1.f);
-//		//S[2][2] += 2.f * area * glm::clamp(-n.z, 0.f, 1.f);
-//		//S[2][2] += 4.f * area;
-//
-//		S[0][0] += area * fabs(n.x);
-//		S[0][0] += area * fabs(n.y);
-//
-//		S[1][1] += area * fabs(n.x);
-//		S[1][1] += area * fabs(n.y);
-//
-//		S[2][2] += 2.f * area * fabs(n.z);
-//
-//		//normalWeightSum += 4.f * area;
-//		normalWeightSum += 2.f * area;
-//		if (isnan(S[0][0]) || isnan(S[1][1]) || isnan(S[2][2])) {
-//			cout << 1 << endl;
-//		}
-//	}
-//	S /= normalWeightSum;
-//	for (int i = 0; i < 3; ++i) {
-//		S[i][i] *= S[i][i];
-//		if (isnan(S[i][i])) {
-//			cout << 2 << endl;
-//		}
-//	}
-//	//S = mat3(1.f);
-//	//S[0][0] = .1f;
-//	//S[1][1] = .1f;
-//	return SGGX(S);
-//}
-
 SGGX QuadricFit::fitSGGX(const Quadric& q) const {
-	Matrix3f Sigma = Matrix3f::Zero();
-	float normalSum = 0.f;
-	for (auto& tri : triangles) {
-		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
-		vec3 n = cross(e1, e2);
-		float area = length(n) / 2.f;
-		n = normalize(n);
-		normalSum += area;
-		Sigma(0, 0) += area * n.x * n.x;
-		Sigma(1, 1) += area * n.y * n.y;
-		Sigma(2, 2) += area * n.z * n.z;
-		Sigma(0, 1) += area * n.x * n.y;
-		Sigma(1, 0) += area * n.y * n.x;
-		Sigma(0, 2) += area * n.x * n.z;
-		Sigma(2, 0) += area * n.z * n.x;
-		Sigma(1, 2) += area * n.y * n.z;
-		Sigma(2, 1) += area * n.z * n.y;
-	}
-	Sigma /= normalSum;
-	SelfAdjointEigenSolver<Matrix3f> es;
-	es.computeDirect(Sigma);
-	Matrix3f eigenVecs = es.eigenvectors();
-	mat3 eigenMat;
-	for (int i = 0; i < 3; ++i) {
-		for (int j = 0; j < 3; ++j) {
-			eigenMat[i][j] = eigenVecs.col(i)[j];
+	dmat3 S(0.f);
+	double normalWeightSum = 0.f;
+	for (auto& [center, n, area] : triangles) {
+		vec3 qn = normalize(q.df(center)), s, t;
+		coordinateSystem(qn, s, t);
+		vec3 localN = vec3(dot(s, n), dot(t, n), dot(qn, n));
+		vec3 h = sampleGGXNDF(localN, .3f, vec2(1.f * rand() / (RAND_MAX + 1.f), 1.f * rand() / (RAND_MAX + 1.f)));
+		float Dh = GGXNDF(dot(h, localN), .3f);
+
+		S[0][0] += area * fabs(h.x);
+		S[0][0] += area * fabs(h.y);
+
+		S[1][1] += area * fabs(h.x);
+		S[1][1] += area * fabs(h.y);
+
+		S[2][2] += 2.f * area * fabs(h.z);
+
+		//normalWeightSum += 4.f * area;
+		normalWeightSum += 2.f * area;
+		if (isnan(S[0][0]) || isnan(S[1][1]) || isnan(S[2][2])) {
+			cout << 1 << endl;
 		}
 	}
-	vec3 sigma(0.f);
+	S /= normalWeightSum;
 	for (int i = 0; i < 3; ++i) {
-		vec3 omega = eigenMat[i];
-		for (auto& tri : triangles) {
-			vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
-			vec3 n = cross(e1, e2);
-			float area = length(n) / 2.f;
-			n = normalize(n);
-			sigma[i] += area * fabs(dot(omega, n));
+		S[i][i] *= S[i][i];
+		if (isnan(S[i][i])) {
+			cout << 2 << endl;
 		}
 	}
-	sigma /= normalSum;
-	mat3 diag(0.f);
-	for (int i = 0; i < 3; ++i) {
-		diag[i][i] = std::max(sigma[i] * sigma[i], 1e-6f);
-	}
-	mat3 S = eigenMat * diag * transpose(eigenMat);
-	for (int i = 0; i < 3; ++i) {
-		for (int j = 0; j < 3; ++j) {
-			if (isnan(S[i][j])) {
-				cout << "s" << endl;
-			}
-		}
-	}
+	//S = mat3(1.f);
+	//S[0][0] = .1f;
+	//S[1][1] = .1f;
 	return SGGX(S);
 }
+
+//SGGX QuadricFit::fitSGGX(const Quadric& q) const {
+//	Matrix3d Sigma = Matrix3d::Zero();
+//	for (auto& [center, n, area] : triangles) {
+//		vec3 h = sampleGGXNDF(n, .3f, vec2(1.f * rand() / (RAND_MAX + 1.f), 1.f * rand() / (RAND_MAX + 1.f)));
+//		float p = GGXNDF(dot(n, h), .3f);
+//		Sigma(0, 0) += area * h.x * h.x;
+//		Sigma(1, 1) += area * h.y * h.y;
+//		Sigma(2, 2) += area * h.z * h.z;
+//		Sigma(0, 1) += area * h.x * h.y;
+//		Sigma(1, 0) += area * h.y * h.x;
+//		Sigma(0, 2) += area * h.x * h.z;
+//		Sigma(2, 0) += area * h.z * h.x;
+//		Sigma(1, 2) += area * h.y * h.z;
+//		Sigma(2, 1) += area * h.z * h.y;
+//	}
+//	Sigma /= areaSum;
+//	SelfAdjointEigenSolver<Matrix3d> es;
+//	es.computeDirect(Sigma);
+//	Matrix3d eigenVecs = es.eigenvectors();
+//	dmat3 eigenMat;
+//	for (int i = 0; i < 3; ++i) {
+//		for (int j = 0; j < 3; ++j) {
+//			eigenMat[i][j] = eigenVecs.col(i)[j];
+//		}
+//	}
+//	dvec3 sigma(0.f);
+//	for (int i = 0; i < 3; ++i) {
+//		vec3 omega = eigenMat[i];
+//		for (auto& [center, n, area] : triangles) {
+//			vec3 h = sampleGGXNDF(n, .3f, vec2(1.f * rand() / (RAND_MAX + 1.f), 1.f * rand() / (RAND_MAX + 1.f)));
+//			float p = GGXNDF(dot(n, h), .3f);
+//			sigma[i] += area * fabs(dot(omega, h));
+//		}
+//	}
+//	sigma /= areaSum;
+//	dmat3 diag(0.f);
+//	for (int i = 0; i < 3; ++i) {
+//		diag[i][i] = std::max(sigma[i] * sigma[i], 1e-6);
+//	}
+//	diag /= diag[2][2];
+//	mat3 S = eigenMat * diag * transpose(eigenMat);
+//	for (int i = 0; i < 3; ++i) {
+//		for (int j = 0; j < 3; ++j) {
+//			if (isnan(S[i][j])) {
+//				cout << "s" << endl;
+//			}
+//		}
+//	}
+//	return SGGX(S);
+//}
 
 const int AREA_SAMPLES = 256;
 
 float QuadricFit::fitAlpha(const Quadric& q, const vec3& bmin, const vec3& bmax) const {
 	float triAreaSum = 0.f, surfArea = 0.f;
-	for (auto& tri : triangles) {
-		vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
-		vec3 n = cross(e1, e2);
-		float area = length(n) / 2.f;
-		n = normalize(n);
-		vec3 qn = normalize(q.df((tri[0] + tri[1] + tri[2]) / 3.f));
-		area *= abs(dot(qn, n));
-		triAreaSum += area;
+	for (auto& [center, n, area] : triangles) {
+		vec3 qn = normalize(q.df(center));
+		triAreaSum += area*fabs(dot(qn, n));
 	}
 	vec3 cap = bmax - bmin;
 	float pdf = 1.f / (cap.x * cap.y);
 	for (int i = 0; i < AREA_SAMPLES; ++i) {
-		float x = bmin.x + cap.x * rand() / RAND_MAX;
-		float y = bmin.y + cap.y * rand() / RAND_MAX;
+		float x = bmin.x + cap.x * rand() / (RAND_MAX + 1.f);
+		float y = bmin.y + cap.y * rand() / (RAND_MAX + 1.f);
 		float a = q.c[2], b = q.c[4] * x + q.c[5] * y + q.c[8], c = q.f(vec3(x, y, 0));
 		float delta = b * b - 4 * a * c;
 		vec3 p(x, y, 0);
 		if (delta > 0.f) {
-			float upProb = 1.f * rand() / RAND_MAX;
+			float upProb = 1.f * rand() / (RAND_MAX + 1.f);
 			if (upProb < .5f) {
 				p.z = (-b + sqrt(delta)) / (2 * a);
 			} else {

@@ -3,7 +3,7 @@
 Voxel& Octree::getVoxel(int layer, vec3 center) {
 	int u = 0;
 	for (int i = 0; i < layer; ++i) {
-		vec3 cap = (nodes[u].bmax - nodes[u].bmin) / 2.f;
+		vec3 cap = (nodes[u].bmax - nodes[u].bmin + vec3(1e-4f)) / 2.f;
 		vec3 offset = center - nodes[u].bmin;
 		ivec3 idx = offset / cap;
 		if (nodes[u].children[idx.x][idx.y][idx.z] == -1) {
@@ -29,7 +29,7 @@ Octree buildOctree(vec3 bmin, vec3 bmax, int layers) {
 	Octree octree;
 	OctreeNode root;
 	root.bmin = bmin;
-	root.bmax = bmax;
+	root.bmax = bmax - vec3(1e-4f);
 	octree.nodes.push_back(root);
 	octree.layers = layers;
 	return octree;

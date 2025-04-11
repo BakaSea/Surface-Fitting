@@ -58,12 +58,18 @@ struct SGGX {
 
 struct QuadricFit {
 
+	struct TriangleInfo {
+		vec3 center;
+		vec3 normal;
+		double area;
+	};
+
 	MatrixXd M, N;
 	Matrix3d SigmaNormal;
 	double weightSum;
 	int vertices;
 	double areaSum;
-	std::vector<mat3> triangles;
+	std::vector<TriangleInfo> triangles;
 
 	QuadricFit() {
 		M = MatrixXd::Zero(10, 10);

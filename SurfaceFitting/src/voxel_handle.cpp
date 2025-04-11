@@ -235,6 +235,8 @@ void VoxelLayer::handleMeshes(int s) {
         for (int t = 0; t < mesh.indices.size(); t += 3) {
             vec3 tri[3] = { mesh.vertices[mesh.indices[t]].Position, mesh.vertices[mesh.indices[t + 1]].Position, mesh.vertices[mesh.indices[t + 2]].Position };
             vec3 tmin = min(tri[0], min(tri[1], tri[2])), tmax = max(tri[0], max(tri[1], tri[2]));
+            vec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
+            vec3 n = normalize(cross(e1, e2));
             int xstart = std::max(int((tmin.x - bbmin.x) / cap.x), 0);
             int ystart = std::max(int((tmin.y - bbmin.y) / cap.y), 0);
             int zstart = std::max(int((tmin.z - bbmin.z) / cap.z), 0);

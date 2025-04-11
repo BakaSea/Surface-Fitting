@@ -53,7 +53,7 @@ vec4 smartDeNoise(sampler2D tex, vec2 uv, float sigma, float kSigma, float thres
 }
 
 vec3 tonemapping(vec3 color) {
-    return pow(color, vec3(1.f/2.2f));
+    return pow(color, vec3(1.0/2.2));
 }
 
 void main() {

@@ -43,7 +43,7 @@ const unsigned int SCR_HEIGHT = 600;
 int renderMode = 1;
 
 // camera
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(vec3(0.933195f, 1.34735f, 2.62107f), vec3(-0.080903f, 0.954049f, -0.288524f), -109.5f, -17.4f);
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -309,6 +309,13 @@ void renderQuad() {
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_R && action == GLFW_PRESS) {
         renderMode = (renderMode + 1) % 2;
+    }
+    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+        cout << "Camera position: " << camera.Position.x << ' ' << camera.Position.y << ' ' << camera.Position.z << endl;
+        cout << "Camera up: " << camera.Up.x << ' ' << camera.Up.y << ' ' << camera.Up.z << endl;
+        cout << "Camera yaw: " << camera.Yaw << endl;
+        cout << "Camera pitch: " << camera.Pitch << endl;
+        cout << endl;
     }
 }
 

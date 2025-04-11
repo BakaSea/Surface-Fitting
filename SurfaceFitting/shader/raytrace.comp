@@ -2,7 +2,7 @@
 #define MAX_DIST 100
 #define M_PI 3.14159265358979323846
 #define INV4PI 0.07957747154594766788
-#define EPS 1e-5
+#define EPS 1e-4
 #define MAX_LAYERS 20
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -599,10 +599,11 @@ vec3 Li(Ray r) {
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
             // return vec3(r.medium, 1000.f*tMax, 0.f);
-            // VoxelData voxel = voxels[r.medium];
+            //VoxelData voxel = voxels[r.medium];
             // return vec3(voxel.alpha);
             // return 10000.0f*vec3(voxel.sigma);
-            // SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
+            //SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
+            //return sampleVNDF(-r.d, sggx, random(), random())*.5f+.5f;
             // vec3 n = normalize(df(voxel.q, r.o));
             // Frame f = coordinateSystem(n);
             // vec3 wi = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
@@ -614,18 +615,19 @@ vec3 Li(Ray r) {
                 throughput *= mRes.sigma_s*mRes.transmittance/mRes.pdfSuccess;
                 DirectSamplingResult dRes = sampleLd(mRes.p, r.medium);
 
-                // VoxelData voxel = voxels[r.medium];
-                // vec3 n = normalize(df(voxel.q, mRes.p));
-                // Frame f = coordinateSystem(n);
-                // vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
-                // vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
-                // float phaseVal = phasePdf(mRes.sggx, wo, wi);
+                VoxelData voxel = voxels[r.medium];
+                vec3 n = normalize(df(voxel.q, mRes.p));
+                Frame f = coordinateSystem(n);
+                vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
+                vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
+                float phaseVal = phasePdf(mRes.sggx, wo, wi);
 
-                float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
+                //float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
                 // Note that we are only using point light.
                 float weight = miWeight(dRes.pdf, 0.f);
                 L += throughput*dRes.Ld*phaseVal*weight;
-                //L = dRes.Ld;
+                //L += dRes.Ld*weight;
+                //L = vec3(phaseVal, r.medium, 0.f);
                 // Multiple scattering prohibited
                 break;
             }

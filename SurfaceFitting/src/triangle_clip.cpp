@@ -39,11 +39,11 @@ vector<vec3> clipTriangle(const vec3 triangle[3], vec3 bmin, vec3 bmax) {
     if (!p.empty()) {
         res.emplace_back(p[0]);
         for (int i = 1; i < p.size(); ++i) {
-            if (length(p[i] - res.back()) > numeric_limits<float>::epsilon()) {
+            if (length(p[i] - res.back()) > 1e-5f) {
                 res.emplace_back(p[i]);
             }
         }
-        if (length(res.back() - res[0]) <= numeric_limits<float>::epsilon()) {
+        if (length(res.back() - res[0]) <= 1e-5f) {
             res.pop_back();
         }
     }
