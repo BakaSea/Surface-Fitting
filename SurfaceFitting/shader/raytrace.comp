@@ -11,10 +11,12 @@ struct VoxelData {
     float q[10];
     float bmin[3];
     float bmax[3];
-    float sggx[6];
+    float sggxD[6];
+    float sggxS[6];
     float albedo[3];
     float sigma;
     float alpha;
+    float kd;
 };
 
 struct OctreeNode {
@@ -59,12 +61,14 @@ struct SGGX {
 };
 
 struct MediumResult {
-    SGGX sggx;
+    SGGX sggxD;
+    SGGX sggxS;
     vec3 transmittance;
     vec3 sigma_s;
     vec3 p;
     float pdfSuccess;
     float pdfFailure;
+    float kd;
     bool success;
 };
 
@@ -208,10 +212,10 @@ float evalDiffuse(SGGX sggx, vec3 wi, vec3 wo) {
     return 1.0f/M_PI*max(0.0f, dot(wo, wm));
 }
 
-float phasePdf(SGGX sggx, vec3 wo, vec3 wi) {
-    return evalSpecular(sggx, wo, wi);
+float phasePdf(SGGX sggxD, SGGX sggxS, vec3 wo, vec3 wi, float kd) {
+    //return evalSpecular(sggx, wo, wi);
     //return evalDiffuse(sggx, wo, wi);
-    //return 0.4f*evalSpecular(sggx, wo, wi)+0.6f*evalDiffuse(sggx, wo, wi);
+    return mix(evalSpecular(sggxS, wo, wi), evalDiffuse(sggxD, wo, wi), kd);
 }
 
 float density(float q[10], vec3 p, float sigma, float alpha, float wDotN) {
@@ -238,7 +242,8 @@ vec3 evalTransmittance(Ray r, float tMax) {
     if (maxDensity == 0) {
         return vec3(1.f);
     }
-    SGGX sggx = {voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]};
+    SGGX sggx = SGGX(mix(voxel.sggxS[0], voxel.sggxD[0], voxel.kd), mix(voxel.sggxS[1], voxel.sggxD[1], voxel.kd), mix(voxel.sggxS[2], voxel.sggxD[2], voxel.kd),
+        mix(voxel.sggxS[3], voxel.sggxD[3], voxel.kd), mix(voxel.sggxS[4], voxel.sggxD[4], voxel.kd), mix(voxel.sggxS[5], voxel.sggxD[5], voxel.kd));
     int nSamples = 2;
     float result = 0.f;
     for (int i = 0; i < nSamples; ++i) {
@@ -265,7 +270,9 @@ vec3 evalTransmittance(Ray r, float tMax) {
 MediumResult sampleDistance(Ray r, float tMax) {
     VoxelData voxel = voxels[r.medium];
     MediumResult mRes;
-    mRes.sggx = SGGX(voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]);
+    mRes.sggxD = SGGX(voxel.sggxD[0], voxel.sggxD[1], voxel.sggxD[2], voxel.sggxD[3], voxel.sggxD[4], voxel.sggxD[5]);
+    mRes.sggxS = SGGX(voxel.sggxS[0], voxel.sggxS[1], voxel.sggxS[2], voxel.sggxS[3], voxel.sggxS[4], voxel.sggxS[5]);
+    mRes.kd = voxel.kd;
     mRes.transmittance = vec3(1.f);
     mRes.pdfSuccess = 1.f;
     mRes.pdfFailure = 1.f;
@@ -620,7 +627,7 @@ vec3 Li(Ray r) {
                 Frame f = coordinateSystem(n);
                 vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
                 vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
-                float phaseVal = phasePdf(mRes.sggx, wo, wi);
+                float phaseVal = phasePdf(mRes.sggxD, mRes.sggxS, wo, wi, mRes.kd);
 
                 //float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
                 // Note that we are only using point light.

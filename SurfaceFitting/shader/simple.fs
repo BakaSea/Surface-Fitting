@@ -12,6 +12,7 @@ vec3 lightPos = vec3(1.f, 1.f, 1.f);
 vec3 lightI = vec3(10.f);
 vec3 albedo = vec3(.7f, .6f, .5f);
 float roughness = .3f;
+float metallic = .5f;
 
 vec3 F(vec3 F0, float VdotH) {
     return F0 + (vec3(1.0f, 1.0f, 1.0f) - F0) * pow(1.0f - VdotH, 5.0f);
@@ -49,9 +50,9 @@ void main() {
     float LdotH = max(dot(L, H), 0.f);
     vec3 fresnel = F(albedo, VdotH);
     vec3 specular = fresnel*D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL);
-    vec3 diffuse = albedo/M_PI;
+    vec3 diffuse = (1.f-fresnel)*(1.f-metallic)*albedo/M_PI;
     //vec3 color = (N+1.f)/2.f;
-    vec3 color = specular*NdotL*lightI/d2;
+    vec3 color = (specular)*NdotL*lightI/d2;
     color = tonemapping(color);
     FragColor = vec4(color, 1);
 }

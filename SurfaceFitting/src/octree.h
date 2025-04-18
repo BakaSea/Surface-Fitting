@@ -8,9 +8,11 @@ using namespace glm;
 struct Voxel {
 	QuadricFit fit;
 	Quadric quadric;
-	SGGX sggx;
+	SGGX sggxD, sggxS;
 	vec3 bmin, bmax;
 	float alpha = 0.f;
+	float kd = 0.f;
+	float ks = 0.f;
 };
 
 struct OctreeNode {

@@ -22,10 +22,13 @@ struct VoxelData {
     //float hullQ[10];
     float bmin[3];
     float bmax[3];
-    float sggx[6];
+    float sggxD[6];
+    float sggxS[6];
     float albedo[3];
     float sigma;
     float alpha;
+    float kd;
+    float ks;
 };
 
 vector<VoxelData> voxelDatas;
@@ -201,6 +204,8 @@ int main(int argc, char **argv) {
         vd.sigma = voxel.quadric.sigma;
         //vd.sigma = 0.001f;
         vd.alpha = voxel.alpha;
+        vd.kd = voxel.kd;
+        vd.ks = voxel.ks;
     }
 
     GLuint voxelDatasBuffer;
