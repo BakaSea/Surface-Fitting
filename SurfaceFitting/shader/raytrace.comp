@@ -11,12 +11,12 @@ struct VoxelData {
     float q[10];
     float bmin[3];
     float bmax[3];
-    float sggxD[6];
-    float sggxS[6];
+    float sggx[6];
     float albedo[3];
     float sigma;
     float alpha;
-    float kd;
+    float metallic;
+    float specular;
 };
 
 struct OctreeNode {
@@ -61,14 +61,15 @@ struct SGGX {
 };
 
 struct MediumResult {
-    SGGX sggxD;
-    SGGX sggxS;
+    SGGX sggx;
+    vec3 albedo;
     vec3 transmittance;
     vec3 sigma_s;
     vec3 p;
+    float metallic;
+    float specular;
     float pdfSuccess;
     float pdfFailure;
-    float kd;
     bool success;
 };
 
@@ -200,22 +201,28 @@ float sigmaWi(vec3 wi, SGGX sggx) {
     return (sqrSigma > 0.f) ? sqrt(sqrSigma) : 0.f;
 }
 
-float evalSpecular(SGGX sggx, vec3 wi, vec3 wo) {
+vec3 evalSpecular(SGGX sggx, vec3 wi, vec3 wo, vec3 albedo, float metallic, float specular) {
     vec3 wh = normalize(wi+wo);
-    return 0.25*D(wh, sggx)/sigmaWi(wi, sggx);
+    float GD = 0.25*D(wh, sggx)/sigmaWi(wi, sggx);
+    float VdotH = max(0.f, dot(wo, wh));
+    vec3 fMetallic = mix(albedo, vec3(1.f), pow(1.f-VdotH, 5.f));
+    float fDielectric = mix(specular, 1.f, pow(1.f-VdotH, 5.f));
+    return (metallic*fMetallic+(1.f-metallic)*fDielectric)*GD;
 }
 
-float evalDiffuse(SGGX sggx, vec3 wi, vec3 wo) {
+vec3 evalDiffuse(SGGX sggx, vec3 wi, vec3 wo, vec3 albedo, float metallic, float specular) {
     // sample VNDF
     vec3 wm = sampleVNDF(wi, sggx, random(), random());
     // eval diffuse
-    return 1.0f/M_PI*max(0.0f, dot(wo, wm));
+    float VdotH = max(0.f, dot(wo, wm));
+    float fresnel = mix(specular, 1.f, pow(1.f-VdotH, 5.f));
+    return (1.f-fresnel)*(1.f-metallic)*albedo*VdotH/M_PI;
 }
 
-float phasePdf(SGGX sggxD, SGGX sggxS, vec3 wo, vec3 wi, float kd) {
+vec3 phasePdf(SGGX sggx, vec3 wo, vec3 wi, vec3 albedo, float metallic, float specular) {
     //return evalSpecular(sggx, wo, wi);
     //return evalDiffuse(sggx, wo, wi);
-    return mix(evalSpecular(sggxS, wo, wi), evalDiffuse(sggxD, wo, wi), kd);
+    return evalDiffuse(sggx, wo, wi, albedo, metallic, specular)+evalSpecular(sggx, wo, wi, albedo, metallic, specular);
 }
 
 float density(float q[10], vec3 p, float sigma, float alpha, float wDotN) {
@@ -242,8 +249,7 @@ vec3 evalTransmittance(Ray r, float tMax) {
     if (maxDensity == 0) {
         return vec3(1.f);
     }
-    SGGX sggx = SGGX(mix(voxel.sggxS[0], voxel.sggxD[0], voxel.kd), mix(voxel.sggxS[1], voxel.sggxD[1], voxel.kd), mix(voxel.sggxS[2], voxel.sggxD[2], voxel.kd),
-        mix(voxel.sggxS[3], voxel.sggxD[3], voxel.kd), mix(voxel.sggxS[4], voxel.sggxD[4], voxel.kd), mix(voxel.sggxS[5], voxel.sggxD[5], voxel.kd));
+    SGGX sggx = SGGX(voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]);
     int nSamples = 2;
     float result = 0.f;
     for (int i = 0; i < nSamples; ++i) {
@@ -270,9 +276,10 @@ vec3 evalTransmittance(Ray r, float tMax) {
 MediumResult sampleDistance(Ray r, float tMax) {
     VoxelData voxel = voxels[r.medium];
     MediumResult mRes;
-    mRes.sggxD = SGGX(voxel.sggxD[0], voxel.sggxD[1], voxel.sggxD[2], voxel.sggxD[3], voxel.sggxD[4], voxel.sggxD[5]);
-    mRes.sggxS = SGGX(voxel.sggxS[0], voxel.sggxS[1], voxel.sggxS[2], voxel.sggxS[3], voxel.sggxS[4], voxel.sggxS[5]);
-    mRes.kd = voxel.kd;
+    mRes.sggx = SGGX(voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]);
+    mRes.albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
+    mRes.metallic = voxel.metallic;
+    mRes.specular = voxel.specular;
     mRes.transmittance = vec3(1.f);
     mRes.pdfSuccess = 1.f;
     mRes.pdfFailure = 1.f;
@@ -283,7 +290,6 @@ MediumResult sampleDistance(Ray r, float tMax) {
         mRes.success = false;
         return mRes;
     }
-    vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
     int i = 0;
     while (true) {
         t += sampleExponential(random(), maxDensity);
@@ -296,7 +302,7 @@ MediumResult sampleDistance(Ray r, float tMax) {
 
         if (densityAtT/maxDensity > random()) {
             mRes.p = p;
-            mRes.sigma_s = albedo*densityAtT;
+            mRes.sigma_s = vec3(densityAtT);
             mRes.transmittance = ((densityAtT != 0.f) ? vec3(1.f)/densityAtT : vec3(0.f));
             success = true;
             break;
@@ -605,7 +611,7 @@ vec3 Li(Ray r) {
             float tMax = iRes.t;
             if (tMax >= MAX_DIST)
                 tMax = 0.f;
-            // return vec3(r.medium, 1000.f*tMax, 0.f);
+            //return vec3(r.medium, 1000.f*tMax, 0.f);
             //VoxelData voxel = voxels[r.medium];
             // return vec3(voxel.alpha);
             // return 10000.0f*vec3(voxel.sigma);
@@ -627,13 +633,12 @@ vec3 Li(Ray r) {
                 Frame f = coordinateSystem(n);
                 vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
                 vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
-                float phaseVal = phasePdf(mRes.sggxD, mRes.sggxS, wo, wi, mRes.kd);
+                vec3 phaseVal = phasePdf(mRes.sggx, wo, wi, mRes.albedo, mRes.metallic, mRes.specular);
 
                 //float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
                 // Note that we are only using point light.
                 float weight = miWeight(dRes.pdf, 0.f);
                 L += throughput*dRes.Ld*phaseVal*weight;
-                //L += dRes.Ld*weight;
                 //L = vec3(phaseVal, r.medium, 0.f);
                 // Multiple scattering prohibited
                 break;

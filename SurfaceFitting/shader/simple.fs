@@ -48,11 +48,14 @@ void main() {
     float NdotV = max(dot(N, V), 0.f);
     float VdotH = max(dot(V, H), 0.f);
     float LdotH = max(dot(L, H), 0.f);
-    vec3 fresnel = F(albedo, VdotH);
-    vec3 specular = fresnel*D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL);
-    vec3 diffuse = (1.f-fresnel)*(1.f-metallic)*albedo/M_PI;
+
+    vec3 dielectricDiff = albedo/M_PI;
+    vec3 dielectricSpec = vec3(D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL));
+    vec3 dielectric = mix(dielectricDiff, dielectricSpec, 0.04f+(1.f-0.04f)*pow(1.f-VdotH, 5.f));
+    vec3 metallicSpec = F(albedo, VdotH)*D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL);
+    vec3 brdf = mix(dielectric, metallicSpec, metallic);
     //vec3 color = (N+1.f)/2.f;
-    vec3 color = (specular)*NdotL*lightI/d2;
+    vec3 color = brdf*NdotL*lightI/d2;
     color = tonemapping(color);
     FragColor = vec4(color, 1);
 }

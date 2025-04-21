@@ -37,7 +37,7 @@ const double dunavantW[6] = {0.223381589678011, 0.223381589678011, 0.22338158967
 const double dunavantX[6] = {0.10810301816807, 0.445948490915965, 0.445948490915965, 0.81684757298045896, 0.091576213509771007, 0.091576213509771007};
 const double dunavantY[6] = {0.445948490915965, 0.445948490915965, 0.10810301816807, 0.091576213509771007, 0.091576213509771007, 0.81684757298045896};
 
-void QuadricFit::addTriangle(const vec3 tri[3], float metallic, float roughness) {
+void QuadricFit::addTriangle(const vec3 tri[3], float metallic, float specular, float roughness) {
 	dvec3 dtri[3] = { dvec3(tri[0]), dvec3(tri[1]), dvec3(tri[2]) };
 	dvec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
 	dvec3 n = cross(e1, e2);
@@ -55,6 +55,8 @@ void QuadricFit::addTriangle(const vec3 tri[3], float metallic, float roughness)
 	}
 
 	triangles.push_back({ (tri[0] + tri[1] + tri[2]) / 3.f, n, area, roughness });
+	this->metallic += area * metallic;
+	this->specular += area * specular;
 
 	areaSum += area;
 }
@@ -255,52 +257,47 @@ void coordinateSystem(const vec3 &n, vec3 &s, vec3 &t) {
 	t = vec3(b, si + n.y * n.y * a, -n.y);
 }
 
-std::pair<SGGX, SGGX> QuadricFit::fitSGGX(const Quadric& q) const {
-	dmat3 SD(0.f), SS(0.f);
+SGGX QuadricFit::fitSGGX(const Quadric& q) const {
+	dmat3 S(0.f);
 	double normalWeightSum = 0.f;
 	for (auto& [center, n, area, roughness] : triangles) {
 		vec3 qn = normalize(q.df(center)), s, t;
 		coordinateSystem(qn, s, t);
 		vec3 localN = vec3(dot(s, n), dot(t, n), dot(qn, n));
-
-		SD[0][0] += area * fabs(localN.x);
-		SD[0][0] += area * fabs(localN.y);
-		SD[1][1] += area * fabs(localN.x);
-		SD[1][1] += area * fabs(localN.y);
-		SD[2][2] += 2.f * area * fabs(localN.z);
-
 		vec3 h = sampleGGXNDF(localN, roughness, vec2(1.f * rand() / (RAND_MAX + 1.f), 1.f * rand() / (RAND_MAX + 1.f)));
 		float Dh = GGXNDF(dot(h, localN), roughness);
 
-		SS[0][0] += area * fabs(h.x);
-		SS[0][0] += area * fabs(h.y);
-		SS[1][1] += area * fabs(h.x);
-		SS[1][1] += area * fabs(h.y);
-		SS[2][2] += 2.f * area * fabs(h.z);
+		S[0][0] += area * fabs(h.x);
+		S[0][0] += area * fabs(h.y);
+		S[1][1] += area * fabs(h.x);
+		S[1][1] += area * fabs(h.y);
+		S[2][2] += 2.f * area * fabs(h.z);
 
 		//normalWeightSum += 4.f * area;
 		normalWeightSum += 2.f * area;
-		if (isnan(SS[0][0]) || isnan(SS[1][1]) || isnan(SS[2][2])) {
+		if (isnan(S[0][0]) || isnan(S[1][1]) || isnan(S[2][2])) {
 			cout << 1 << endl;
 		}
 	}
-	SD /= normalWeightSum;
-	SS /= normalWeightSum;
+	S /= normalWeightSum;
 	for (int i = 0; i < 3; ++i) {
-		SD[i][i] *= SD[i][i];
-		SS[i][i] *= SS[i][i];
-		if (isnan(SS[i][i])) {
+		S[i][i] *= S[i][i];
+		if (isnan(S[i][i])) {
 			cout << 2 << endl;
 		}
 	}
 	//S = mat3(1.f);
 	//S[0][0] = .1f;
 	//S[1][1] = .1f;
-	return { SGGX(SD), SGGX(SS) };
+	return SGGX(S);
 }
 
-float QuadricFit::fitKd() const {
-	return 0.0f;
+float QuadricFit::fitMetallic() const {
+	return metallic / areaSum;
+}
+
+float QuadricFit::fitSpecular() const {
+	return specular / areaSum;
 }
 
 //SGGX QuadricFit::fitSGGX(const Quadric& q) const {
@@ -358,7 +355,7 @@ const int AREA_SAMPLES = 256;
 
 float QuadricFit::fitAlpha(const Quadric& q, const vec3& bmin, const vec3& bmax) const {
 	float triAreaSum = 0.f, surfArea = 0.f;
-	for (auto& [center, n, area] : triangles) {
+	for (auto& [center, n, area, roughness] : triangles) {
 		vec3 qn = normalize(q.df(center));
 		triAreaSum += area*fabs(dot(qn, n));
 	}

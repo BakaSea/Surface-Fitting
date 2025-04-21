@@ -257,7 +257,7 @@ void VoxelLayer::handleMeshes(int s) {
                             }
                             for (int p = 1; p <= points.size() - 2; ++p) {
                                 vec3 clipTri[3] = { points[0], points[p], points[p + 1] };
-                                octree.getVoxel(layers, (bmin + bmax) / 2.f).fit.addTriangle(clipTri);
+                                octree.getVoxel(layers, (bmin + bmax) / 2.f).fit.addTriangle(clipTri, .5f, .04f, .3f);
                                 //voxels[i][j][k].fit.addTriangle(clipTri);
                             }
                         }
@@ -307,13 +307,12 @@ void VoxelLayer::handleMeshes(int s) {
             voxel.alpha = voxel.fit.fitAlpha(voxel.quadric, voxel.bmin, voxel.bmax);
             //voxel.alpha = 1.f;
             out << ' ' << voxel.alpha << endl;
-            auto sggxDS = voxel.fit.fitSGGX(voxel.quadric);
-            voxel.sggxD = sggxDS.first;
-            voxel.sggxS = sggxDS.second;
-            voxel.kd = 
+            voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
+            voxel.metallic = voxel.fit.fitMetallic();
+            voxel.specular = voxel.fit.fitSpecular();
             //voxel.sggx.S_xx = voxel.sggx.S_yy = 0.1f;
             //voxel.sggx.S_zz = 1.f;
-            //cout << voxel.sggx.S_xx << ' ' << voxel.sggx.S_yy << ' ' << voxel.sggx.S_zz << endl;
+            //cout << voxel.sggxD.S_xx << ' ' << voxel.sggxD.S_yy << ' ' << voxel.sggxD.S_zz << endl;
         }
     }
 
