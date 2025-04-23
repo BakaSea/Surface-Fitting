@@ -2,7 +2,7 @@
 #define MAX_DIST 100
 #define M_PI 3.14159265358979323846
 #define INV4PI 0.07957747154594766788
-#define EPS 1e-4
+#define EPS (1e-4)
 #define MAX_LAYERS 20
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -12,11 +12,10 @@ struct VoxelData {
     float bmin[3];
     float bmax[3];
     float sggx[6];
-    float albedo[3];
+    float Ed[3];
+    float Es[3];
     float sigma;
     float alpha;
-    float metallic;
-    float specular;
 };
 
 struct OctreeNode {
@@ -62,7 +61,8 @@ struct SGGX {
 
 struct MediumResult {
     SGGX sggx;
-    vec3 albedo;
+    vec3 Ed;
+    vec3 Es;
     vec3 transmittance;
     vec3 sigma_s;
     vec3 p;
@@ -201,28 +201,26 @@ float sigmaWi(vec3 wi, SGGX sggx) {
     return (sqrSigma > 0.f) ? sqrt(sqrSigma) : 0.f;
 }
 
-vec3 evalSpecular(SGGX sggx, vec3 wi, vec3 wo, vec3 albedo, float metallic, float specular) {
+float evalSpecular(SGGX sggx, vec3 wi, vec3 wo) {
     vec3 wh = normalize(wi+wo);
-    float GD = 0.25*D(wh, sggx)/sigmaWi(wi, sggx);
-    float VdotH = max(0.f, dot(wo, wh));
-    vec3 fMetallic = mix(albedo, vec3(1.f), pow(1.f-VdotH, 5.f));
-    float fDielectric = mix(specular, 1.f, pow(1.f-VdotH, 5.f));
-    return (metallic*fMetallic+(1.f-metallic)*fDielectric)*GD;
+    return 0.25*D(wh, sggx)/sigmaWi(wi, sggx);
 }
 
-vec3 evalDiffuse(SGGX sggx, vec3 wi, vec3 wo, vec3 albedo, float metallic, float specular) {
+float evalDiffuse(SGGX sggx, vec3 wi, vec3 wo) {
     // sample VNDF
     vec3 wm = sampleVNDF(wi, sggx, random(), random());
     // eval diffuse
-    float VdotH = max(0.f, dot(wo, wm));
-    float fresnel = mix(specular, 1.f, pow(1.f-VdotH, 5.f));
-    return (1.f-fresnel)*(1.f-metallic)*albedo*VdotH/M_PI;
+    return max(0.f, dot(wo, wm))/M_PI;
 }
 
-vec3 phasePdf(SGGX sggx, vec3 wo, vec3 wi, vec3 albedo, float metallic, float specular) {
+vec3 phasePdf(SGGX sggx, vec3 wo, vec3 wi, vec3 Ed, vec3 Es) {
     //return evalSpecular(sggx, wo, wi);
     //return evalDiffuse(sggx, wo, wi);
-    return evalDiffuse(sggx, wo, wi, albedo, metallic, specular)+evalSpecular(sggx, wo, wi, albedo, metallic, specular);
+    vec3 wh = normalize(wo+wi);
+    float Fc = pow(1.f-dot(wi, wh), 5.f);
+    vec3 I1 = (1.f-Fc)*Ed;
+    vec3 I2 = (1.f-Fc)*Es+Fc;
+    return I1*evalDiffuse(sggx, wo, wi)+I2*evalSpecular(sggx, wo, wi);
 }
 
 float density(float q[10], vec3 p, float sigma, float alpha, float wDotN) {
@@ -243,11 +241,11 @@ Frame coordinateSystem(vec3 n) {
     return Frame(s, t, n);
 }
 
-vec3 evalTransmittance(Ray r, float tMax) {
+float evalTransmittance(Ray r, float tMax) {
     VoxelData voxel = voxels[r.medium];
     float maxDensity = voxel.alpha*GaussianDistrubtion(0, 0, voxel.sigma);
     if (maxDensity == 0) {
-        return vec3(1.f);
+        return 1.f;
     }
     SGGX sggx = SGGX(voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]);
     int nSamples = 2;
@@ -269,7 +267,7 @@ vec3 evalTransmittance(Ray r, float tMax) {
                 break;
         }
     }
-    return vec3(result/nSamples);
+    return result/nSamples;
     //return vec3(1.f);
 }
 
@@ -277,12 +275,20 @@ MediumResult sampleDistance(Ray r, float tMax) {
     VoxelData voxel = voxels[r.medium];
     MediumResult mRes;
     mRes.sggx = SGGX(voxel.sggx[0], voxel.sggx[1], voxel.sggx[2], voxel.sggx[3], voxel.sggx[4], voxel.sggx[5]);
-    mRes.albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
-    mRes.metallic = voxel.metallic;
-    mRes.specular = voxel.specular;
+    mRes.Ed = vec3(voxel.Ed[0], voxel.Ed[1], voxel.Ed[2]);
+    mRes.Es = vec3(voxel.Es[0], voxel.Es[1], voxel.Es[2]);
     mRes.transmittance = vec3(1.f);
     mRes.pdfSuccess = 1.f;
     mRes.pdfFailure = 1.f;
+
+    if (tMax <= EPS) {
+        mRes.p = r.o;
+        mRes.sigma_s = vec3(1.f);
+        mRes.transmittance = vec3(1.f);
+        mRes.success = true;
+        return mRes;
+    }
+
     bool success = false;
     float t = 0.f;
     float maxDensity = voxel.alpha*GaussianDistrubtion(0, 0, voxel.sigma);
@@ -353,7 +359,7 @@ float intersectAABB(Ray r, vec3 bmin, vec3 bmax, float tMin, float tMax) {
     return MAX_DIST;
 }
 
-IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax, bool inMedium) {
+IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax) {
     VoxelData voxel = voxels[idx];
     vec3 bmin = {voxel.bmin[0], voxel.bmin[1], voxel.bmin[2]};
     vec3 bmax = {voxel.bmax[0], voxel.bmax[1], voxel.bmax[2]};
@@ -389,9 +395,6 @@ IntersectResult intersectVoxel(Ray r, int idx, float tMin, float tMax, bool inMe
         }
     }
     res.t = min(min(upSol, downSol), aabb);
-    if (inMedium && res.t >= tMax) {
-        res.t = tMin;
-    }
     if (res.t < tMax) {
         res.intersection = r.o+res.t*r.d;
         res.idx = idx;
@@ -523,7 +526,7 @@ IntersectResult intersect(Ray r, float tMax) {
             }
         }
         if (top == octreeLayer) {
-            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, EPS, res.t, false);
+            IntersectResult intr = intersectVoxel(r, uStk[top].voxelId, EPS, res.t);
             if (intr.t < res.t) {
                 res = intr;
             }
@@ -572,15 +575,20 @@ DirectSamplingResult sampleLd(vec3 p, int medium) {
     dRes.pdf = 1.f;
     dRes.d = wi;
 
+    //return dRes;
     vec3 transmittance = vec3(1.f);
     Ray r = {p, wi, medium};
     IntersectResult iRes;
     while (lightDist > EPS) {
         if (r.medium >= 0) {
-            iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST, true);
-            if (iRes.t >= MAX_DIST)
-               iRes.t = 0.f;
-            transmittance *= evalTransmittance(r, min(iRes.t, lightDist));
+            iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST);
+            if (iRes.t >= MAX_DIST) {
+                iRes.t = EPS;
+                iRes.intersection = r.o+iRes.t*r.d;
+                iRes.idx = r.medium;
+            } else {
+                transmittance *= evalTransmittance(r, min(iRes.t, lightDist));
+            }
         } else {
             iRes = intersect(r, MAX_DIST);
         }
@@ -609,8 +617,11 @@ vec3 Li(Ray r) {
         bool inMedium = false;
         if (r.medium >= 0) {
             float tMax = iRes.t;
-            if (tMax >= MAX_DIST)
-                tMax = 0.f;
+            if (tMax >= MAX_DIST) {
+                tMax = EPS;
+                iRes.intersection = r.o+tMax*r.d;
+                iRes.idx = r.medium;
+            }
             //return vec3(r.medium, 1000.f*tMax, 0.f);
             //VoxelData voxel = voxels[r.medium];
             // return vec3(voxel.alpha);
@@ -633,7 +644,7 @@ vec3 Li(Ray r) {
                 Frame f = coordinateSystem(n);
                 vec3 wo = vec3(dot(-r.d, f.s), dot(-r.d, f.t), dot(-r.d, f.n));
                 vec3 wi = vec3(dot(dRes.d, f.s), dot(dRes.d, f.t), dot(dRes.d, f.n));
-                vec3 phaseVal = phasePdf(mRes.sggx, wo, wi, mRes.albedo, mRes.metallic, mRes.specular);
+                vec3 phaseVal = phasePdf(mRes.sggx, wo, wi, mRes.Ed, mRes.Es);
 
                 //float phaseVal = phasePdf(mRes.sggx, -r.d, dRes.d);
                 // Note that we are only using point light.
@@ -643,7 +654,6 @@ vec3 Li(Ray r) {
                 // Multiple scattering prohibited
                 break;
             }
-            //return vec3(1.f, 0.f, 0.f);
         }
 
         if (!inMedium) {
@@ -661,65 +671,13 @@ vec3 Li(Ray r) {
                 r.medium = -1;
             }
             if (r.medium >= 0) {
-                iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST, true);
+                iRes = intersectVoxel(r, r.medium, EPS, MAX_DIST);
             } else {
                 iRes = intersect(r, MAX_DIST);
             }
         }
         loopCnt++;
         rayMedium = r.medium;
-    }
-    return L;
-}
-
-vec3 F(vec3 F0, float VdotH) {
-    return mix(F0, vec3(1.f), pow(1.f-VdotH, 5.f));
-}
-
-float D(float NdotH, float roughness) {
-    float a2 = roughness*roughness;
-    float cos2Theta = NdotH*NdotH;
-    float tan2Theta = (1.f-cos2Theta)/cos2Theta;
-    float d = 1.f+tan2Theta/a2;
-    return 1.f/(M_PI*a2*cos2Theta*cos2Theta*d*d);
-}
-
-float lambda(float cosTheta, float roughness) {
-    float cos2Theta = cosTheta*cosTheta;
-    float tan2Theta = (1.f-cos2Theta)/cos2Theta;
-    float a2 = roughness*roughness;
-    return (sqrt(1.f+a2*tan2Theta)-1.f)/2.f;
-}
-
-float G(float NdotL, float NdotV, float roughness) {
-    return 1.f/(1.f+lambda(NdotL, roughness)+lambda(NdotV, roughness));
-}
-
-vec3 LGGX(Ray r) {
-    vec3 L = vec3(0.f);
-    float roughness = .31623f;
-    IntersectResult iRes = intersect(r, MAX_DIST);
-    if (iRes.idx >= 0) {
-        VoxelData voxel = voxels[iRes.idx];
-        vec3 albedo = vec3(voxel.albedo[0], voxel.albedo[1], voxel.albedo[2]);
-        vec3 n = normalize(df(voxel.q, iRes.intersection));
-        vec3 wi = lightPos-iRes.intersection;
-        float lightDist = length(wi);
-        wi = normalize(wi);
-        Ray shadowRay;
-        shadowRay.o = iRes.intersection;
-        shadowRay.d = wi;
-        IntersectResult shadowRes = intersect(shadowRay, MAX_DIST);
-        if (shadowRes.t < MAX_DIST) {
-            vec3 H = normalize(wi-r.d);
-            float NdotH = abs(dot(n, H));
-            float NdotL = abs(dot(n, wi));
-            float NdotV = abs(dot(n, -r.d));
-            float VdotH = abs(dot(n, H));
-            vec3 fresnel = F(albedo, VdotH);
-            vec3 specular = fresnel*D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL);
-            L += specular*NdotL*lightI/(lightDist*lightDist);
-        }   
     }
     return L;
 }
@@ -742,7 +700,5 @@ void main() {
     color *= (currentSample-1.f)/currentSample;
     //color = Li(r);
     color += Li(r)/currentSample;
-    //color += LGGX(r)/currentSample;
-    //color += LiPBRT(r)/currentSample;
     imageStore(imgOutput, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.f));
 }

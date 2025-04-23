@@ -37,7 +37,7 @@ const double dunavantW[6] = {0.223381589678011, 0.223381589678011, 0.22338158967
 const double dunavantX[6] = {0.10810301816807, 0.445948490915965, 0.445948490915965, 0.81684757298045896, 0.091576213509771007, 0.091576213509771007};
 const double dunavantY[6] = {0.445948490915965, 0.445948490915965, 0.10810301816807, 0.091576213509771007, 0.091576213509771007, 0.81684757298045896};
 
-void QuadricFit::addTriangle(const vec3 tri[3], float metallic, float specular, float roughness) {
+void QuadricFit::addTriangle(const vec3 tri[3], vec3 albedo, float metallic, float specular, float roughness) {
 	dvec3 dtri[3] = { dvec3(tri[0]), dvec3(tri[1]), dvec3(tri[2]) };
 	dvec3 e1 = tri[1] - tri[0], e2 = tri[2] - tri[0];
 	dvec3 n = cross(e1, e2);
@@ -55,8 +55,9 @@ void QuadricFit::addTriangle(const vec3 tri[3], float metallic, float specular, 
 	}
 
 	triangles.push_back({ (tri[0] + tri[1] + tri[2]) / 3.f, n, area, roughness });
-	this->metallic += area * metallic;
-	this->specular += area * specular;
+
+	Ed += area * dvec3(albedo - albedo * metallic - albedo * specular + albedo * metallic * specular);
+	Es += area * dvec3(albedo * metallic + specular - metallic * specular);
 
 	areaSum += area;
 }
@@ -292,12 +293,12 @@ SGGX QuadricFit::fitSGGX(const Quadric& q) const {
 	return SGGX(S);
 }
 
-float QuadricFit::fitMetallic() const {
-	return metallic / areaSum;
+vec3 QuadricFit::fitEd() const {
+	return Ed / areaSum;
 }
 
-float QuadricFit::fitSpecular() const {
-	return specular / areaSum;
+vec3 QuadricFit::fitEs() const {
+	return Es / areaSum;
 }
 
 //SGGX QuadricFit::fitSGGX(const Quadric& q) const {

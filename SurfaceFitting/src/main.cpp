@@ -23,11 +23,10 @@ struct VoxelData {
     float bmin[3];
     float bmax[3];
     float sggx[6];
-    float albedo[3];
+    float Ed[3];
+    float Es[3];
     float sigma;
     float alpha;
-    float metallic;
-    float specular;
 };
 
 vector<VoxelData> voxelDatas;
@@ -198,13 +197,12 @@ int main(int argc, char **argv) {
         for (int d = 0; d < 3; ++d) {
             vd.bmin[d] = voxel.bmin[d];
             vd.bmax[d] = voxel.bmax[d];
+            vd.Ed[d] = voxel.Ed[d];
+            vd.Es[d] = voxel.Es[d];
         }
-        vd.albedo[0] = .7f; vd.albedo[1] = .6f; vd.albedo[2] = .5f;
         vd.sigma = voxel.quadric.sigma;
         //vd.sigma = 0.001f;
         vd.alpha = voxel.alpha;
-        vd.metallic = voxel.metallic;
-        vd.specular = voxel.specular;
     }
 
     GLuint voxelDatasBuffer;

@@ -10,9 +10,8 @@ struct Voxel {
 	Quadric quadric;
 	SGGX sggx;
 	vec3 bmin, bmax;
+	vec3 Ed = vec3(0.f), Es = vec3(0.f);
 	float alpha = 0.f;
-	float metallic = 0.f;
-	float specular = 0.f;
 };
 
 struct OctreeNode {

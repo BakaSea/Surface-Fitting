@@ -48,6 +48,11 @@ void main() {
     float NdotV = max(dot(N, V), 0.f);
     float VdotH = max(dot(V, H), 0.f);
     float LdotH = max(dot(L, H), 0.f);
+    // float NdotH = abs(dot(N, H));
+    // float NdotL = abs(dot(N, L));
+    // float NdotV = abs(dot(N, V));
+    // float VdotH = abs(dot(V, H));
+    // float LdotH = abs(dot(L, H));
 
     vec3 dielectricDiff = albedo/M_PI;
     vec3 dielectricSpec = vec3(D(NdotH, roughness)*G(NdotL, NdotV, roughness)/(4.f*NdotV*NdotL));
