@@ -310,7 +310,7 @@ void VoxelLayer::handleMeshes(int s) {
             voxel.sggx = voxel.fit.fitSGGX(voxel.quadric);
             voxel.Ed = voxel.fit.fitEd();
             voxel.Es = voxel.fit.fitEs();
-            //voxel.sggx.S_xx = voxel.sggx.S_yy = 0.1f;
+            //voxel.sggx.S_xx = voxel.sggx.S_yy = 0.3f*0.3f;
             //voxel.sggx.S_zz = 1.f;
             //cout << voxel.sggxD.S_xx << ' ' << voxel.sggxD.S_yy << ' ' << voxel.sggxD.S_zz << endl;
         }
